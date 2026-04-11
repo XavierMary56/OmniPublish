@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Data
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Uploads
+backend/uploads/watermarks/*.png
+backend/uploads/watermarks/*.mov
+backend/uploads/watermarks/*.mp4
+backend/uploads/tasks/
+
+# Config (contains secrets)
+config.json
+!config.json.example
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# YOLOv8 models
+*.pt
+runs/

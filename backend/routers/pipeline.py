@@ -1,0 +1,408 @@
+"""OmniPublish V2.0 — 流水线路由（核心）"""
+
+import asyncio
+import json
+import os
+import shutil
+import uuid
+from typing import List
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
+from models.task import (
+    CreateTaskRequest, GenerateCopyRequest, ConfirmCopyRequest,
+    ConfirmRenameRequest, ConfirmCoverRequest, PublishRequest,
+)
+from models.common import ApiResponse
+from models.user import UserInfo
+from middleware.auth import get_current_user
+from database import get_db, get_next_task_no
+from services.pipeline_service import pipeline_service
+from services.copywrite_service import copywrite_service
+from services.rename_service import rename_service
+from services.cover_service import cover_service
+from services.watermark_service import watermark_service
+from services.publish_service import publish_service
+from config import BACKEND_DIR
+
+router = APIRouter(prefix="/api/pipeline", tags=["流水线"])
+
+# 上传文件存储根目录
+UPLOAD_ROOT = os.path.join(BACKEND_DIR, "uploads", "tasks")
+os.makedirs(UPLOAD_ROOT, exist_ok=True)
+
+
+# ══════════════════════════════════════════
+# 文件上传接口
+# ══════════════════════════════════════════
+
+@router.post("/upload")
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    user: UserInfo = Depends(get_current_user),
+):
+    """上传素材文件，返回服务端文件夹路径和文件识别结果。"""
+    if not files:
+        raise HTTPException(status_code=400, detail="未选择任何文件")
+
+    # 创建唯一目录
+    folder_id = uuid.uuid4().hex[:12]
+    folder_path = os.path.join(UPLOAD_ROOT, folder_id)
+    os.makedirs(folder_path, exist_ok=True)
+
+    saved_files = []
+    total_size = 0
+    for f in files:
+        # 安全处理文件名（保留原名，去掉路径分隔符）
+        safe_name = os.path.basename(f.filename or "unknown")
+        dest_path = os.path.join(folder_path, safe_name)
+
+        # 写入文件
+        content = await f.read()
+        total_size += len(content)
+        with open(dest_path, "wb") as fp:
+            fp.write(content)
+        saved_files.append(safe_name)
+
+    # 自动扫描识别
+    manifest = _scan_folder(folder_path)
+
+    return ApiResponse.success(data={
+        "folder_path": folder_path,
+        "folder_id": folder_id,
+        "total_files": len(saved_files),
+        "total_size_mb": round(total_size / 1024 / 1024, 2),
+        "file_manifest": manifest,
+    })
+
+
+# ══════════════════════════════════════════
+# Step 1: 创建任务
+# ══════════════════════════════════════════
+
+@router.post("")
+async def create_task(req: CreateTaskRequest, user: UserInfo = Depends(get_current_user)):
+    """Step 1 提交：创建发帖任务。"""
+    if not os.path.isdir(req.folder_path):
+        raise HTTPException(status_code=400, detail=f"文件夹不存在: {req.folder_path}")
+
+    manifest = _scan_folder(req.folder_path)
+    if not manifest["images"] and not manifest["videos"]:
+        raise HTTPException(status_code=400, detail="文件夹中未找到图片或视频文件")
+
+    task_no = await get_next_task_no()
+
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """INSERT INTO tasks (task_no, folder_path, created_by, target_platforms, file_manifest, status, current_step)
+               VALUES (?, ?, ?, ?, ?, 'running', 1)""",
+            (task_no, req.folder_path, user.id,
+             json.dumps(req.target_platforms), json.dumps(manifest)),
+        )
+        task_id = cursor.lastrowid
+
+        for step in range(6):
+            status = "done" if step == 0 else ("awaiting_confirm" if step == 1 else "pending")
+            await db.execute(
+                "INSERT INTO task_steps (task_id, step, status) VALUES (?, ?, ?)",
+                (task_id, step, status),
+            )
+        for pid in req.target_platforms:
+            await db.execute(
+                "INSERT INTO platform_tasks (task_id, platform_id) VALUES (?, ?)",
+                (task_id, pid),
+            )
+        await db.commit()
+
+        await pipeline_service.add_log(task_id, f"任务创建: {len(req.target_platforms)} 个平台", step=0)
+
+        return ApiResponse.success(data={
+            "task_id": task_id,
+            "task_no": task_no,
+            "file_manifest": manifest,
+        })
+    finally:
+        await db.close()
+
+
+@router.post("/{task_id}/scan-folder")
+async def scan_folder(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """扫描素材文件夹。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return ApiResponse.success(data=_scan_folder(task["folder_path"]))
+
+
+@router.get("/{task_id}")
+async def get_task(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """获取任务完整详情。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if user.role == "editor" and task["created_by"] != user.id:
+        raise HTTPException(status_code=403, detail="无权查看此任务")
+
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM task_steps WHERE task_id = ? ORDER BY step", (task_id,)
+        )
+        task["steps"] = [dict(r) for r in await cursor.fetchall()]
+
+        cursor = await db.execute(
+            """SELECT pt.*, p.name as platform_name FROM platform_tasks pt
+               JOIN platforms p ON pt.platform_id = p.id WHERE pt.task_id = ?""",
+            (task_id,),
+        )
+        task["platform_tasks"] = [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
+
+    return ApiResponse.success(data=task)
+
+
+# ══════════════════════════════════════════
+# Step 2: 文案生成
+# ══════════════════════════════════════════
+
+@router.get("/{task_id}/step/2/categories")
+async def get_dynamic_categories(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """根据已选平台动态加载分类库并集。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    platform_ids = task.get("target_platforms", [])
+    if not platform_ids:
+        return ApiResponse.success(data={"categories": []})
+
+    db = await get_db()
+    try:
+        placeholders = ",".join("?" * len(platform_ids))
+        cursor = await db.execute(
+            f"SELECT id, name, categories FROM platforms WHERE id IN ({placeholders})",
+            platform_ids,
+        )
+        all_cats = set()
+        count_with = 0
+        for row in await cursor.fetchall():
+            cats = json.loads(row["categories"] or "[]")
+            if cats:
+                count_with += 1
+                all_cats.update(cats)
+
+        return ApiResponse.success(data={
+            "categories": sorted(all_cats),
+            "platforms_with_categories": count_with,
+            "total_platforms": len(platform_ids),
+        })
+    finally:
+        await db.close()
+
+
+@router.post("/{task_id}/step/2/generate")
+async def generate_copy(task_id: int, req: GenerateCopyRequest,
+                        bg: BackgroundTasks, user: UserInfo = Depends(get_current_user)):
+    """触发 AI 文案生成（后台异步执行）。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    # 保存输入参数到任务
+    db = await get_db()
+    try:
+        await db.execute(
+            """UPDATE tasks SET protagonist = ?, event_desc = ?, style = ?,
+               author = ?, categories = ?, updated_at = datetime('now') WHERE id = ?""",
+            (req.protagonist, req.event, req.style, req.author,
+             json.dumps(req.categories), task_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    # 后台异步生成
+    bg.add_task(copywrite_service.generate, task_id, req.model_dump())
+
+    return ApiResponse.success(message="文案生成已启动，请通过 WebSocket 监听进度")
+
+
+@router.put("/{task_id}/step/2/confirm")
+async def confirm_copy(task_id: int, req: ConfirmCopyRequest, user: UserInfo = Depends(get_current_user)):
+    """确认文案，推进到 Step 3。"""
+    db = await get_db()
+    try:
+        await db.execute(
+            """UPDATE tasks SET confirmed_title = ?, confirmed_keywords = ?, confirmed_body = ?,
+               author = ?, categories = ?, rename_prefix = ?, updated_at = datetime('now') WHERE id = ?""",
+            (req.title, req.keywords, req.body, req.author,
+             json.dumps(req.categories), req.title[:20], task_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    await pipeline_service.advance_step(task_id, from_step=1, to_step=2)
+    await pipeline_service.add_log(task_id, f"文案已确认: {req.title[:30]}", step=1)
+
+    return ApiResponse.success(message="文案已确认，进入 Step 3 图片重命名")
+
+
+# ══════════════════════════════════════════
+# Step 3: 图片重命名
+# ══════════════════════════════════════════
+
+@router.get("/{task_id}/step/3/preview")
+async def preview_rename(task_id: int, prefix: str = "", start: int = 1,
+                         separator: str = "_", user: UserInfo = Depends(get_current_user)):
+    """预览重命名结果。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    actual_prefix = prefix or task.get("rename_prefix", "image")
+    preview = await rename_service.preview(task["folder_path"], actual_prefix, start, 2, separator)
+    return ApiResponse.success(data=preview)
+
+
+@router.put("/{task_id}/step/3/confirm")
+async def confirm_rename(task_id: int, req: ConfirmRenameRequest,
+                         bg: BackgroundTasks, user: UserInfo = Depends(get_current_user)):
+    """确认并执行重命名。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    bg.add_task(rename_service.execute, task_id, task["folder_path"],
+                req.prefix, req.start, req.digits, req.separator)
+
+    return ApiResponse.success(message="重命名执行中，完成后自动进入 Step 4")
+
+
+# ══════════════════════════════════════════
+# Step 4: 封面制作
+# ══════════════════════════════════════════
+
+@router.post("/{task_id}/step/4/generate")
+async def generate_cover(task_id: int, layout: str = "triple", candidates: int = 3,
+                         bg: BackgroundTasks = None, user: UserInfo = Depends(get_current_user)):
+    """生成候选封面。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    bg.add_task(cover_service.generate_candidates, task_id, task["folder_path"], layout, candidates)
+    return ApiResponse.success(message="封面生成已启动")
+
+
+@router.put("/{task_id}/step/4/confirm")
+async def confirm_cover(task_id: int, req: ConfirmCoverRequest, user: UserInfo = Depends(get_current_user)):
+    """确认选中的封面。"""
+    cover_path = await cover_service.confirm_cover(task_id, req.cover_index)
+    return ApiResponse.success(data={"cover_path": cover_path}, message="封面已确认，进入 Step 5 水印处理")
+
+
+# ══════════════════════════════════════════
+# Step 5: 水印处理
+# ══════════════════════════════════════════
+
+@router.get("/{task_id}/step/5/plan")
+async def get_watermark_plan(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """获取各平台水印方案。"""
+    plan = await watermark_service.get_watermark_plan(task_id)
+    return ApiResponse.success(data=plan)
+
+
+@router.put("/{task_id}/step/5/confirm")
+async def confirm_watermark(task_id: int, bg: BackgroundTasks, user: UserInfo = Depends(get_current_user)):
+    """确认水印方案，开始并行处理。"""
+    bg.add_task(watermark_service.process_all_platforms, task_id)
+    return ApiResponse.success(message="水印处理已启动，各平台并行处理中")
+
+
+@router.get("/{task_id}/step/5/progress")
+async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """获取各平台水印处理进度。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT pt.platform_id, p.name, pt.wm_status, pt.wm_progress, pt.wm_error
+               FROM platform_tasks pt
+               JOIN platforms p ON pt.platform_id = p.id
+               WHERE pt.task_id = ?""",
+            (task_id,),
+        )
+        progress = [dict(r) for r in await cursor.fetchall()]
+        return ApiResponse.success(data=progress)
+    finally:
+        await db.close()
+
+
+# ══════════════════════════════════════════
+# Step 6: 上传 & 发布
+# ══════════════════════════════════════════
+
+@router.get("/{task_id}/step/6/status")
+async def get_publish_status(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """获取各平台上传/切片/发布状态。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT pt.*, p.name as platform_name
+               FROM platform_tasks pt
+               JOIN platforms p ON pt.platform_id = p.id
+               WHERE pt.task_id = ?""",
+            (task_id,),
+        )
+        statuses = [dict(r) for r in await cursor.fetchall()]
+        return ApiResponse.success(data=statuses)
+    finally:
+        await db.close()
+
+
+@router.post("/{task_id}/step/6/publish")
+async def publish(task_id: int, req: PublishRequest, bg: BackgroundTasks,
+                  user: UserInfo = Depends(get_current_user)):
+    """发布指定平台（或全部已就绪）。"""
+    bg.add_task(publish_service.publish_platforms, task_id, req.platform_ids or None)
+    return ApiResponse.success(message="发布任务已启动")
+
+
+@router.post("/{task_id}/step/6/retry")
+async def retry_publish(task_id: int, platform_id: int, bg: BackgroundTasks,
+                        user: UserInfo = Depends(get_current_user)):
+    """重试失败的平台。"""
+    bg.add_task(publish_service.retry_platform, task_id, platform_id)
+    return ApiResponse.success(message=f"平台 {platform_id} 重试已启动")
+
+
+@router.put("/{task_id}/cancel")
+async def cancel_task(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """取消任务。"""
+    await pipeline_service.update_task_status(task_id, "cancelled")
+    await pipeline_service.add_log(task_id, "任务已取消")
+    return ApiResponse.success(message="任务已取消")
+
+
+# ── 工具函数 ──
+
+def _scan_folder(folder_path: str) -> dict:
+    """扫描文件夹，返回文件清单。"""
+    img_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+    vid_exts = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv", ".webm"}
+    txt_exts = {".txt"}
+    manifest = {"images": [], "videos": [], "txts": []}
+    if not os.path.isdir(folder_path):
+        return manifest
+    for fname in sorted(os.listdir(folder_path)):
+        fpath = os.path.join(folder_path, fname)
+        if not os.path.isfile(fpath):
+            continue
+        ext = os.path.splitext(fname)[1].lower()
+        if ext in img_exts:
+            manifest["images"].append(fname)
+        elif ext in vid_exts:
+            manifest["videos"].append(fname)
+        elif ext in txt_exts:
+            manifest["txts"].append(fname)
+    return manifest

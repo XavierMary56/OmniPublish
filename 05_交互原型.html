@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OmniPublish V2.0 — 全链路发帖工作台 (原型 v2)</title>
+<style>
+:root{
+  --primary:#4fc3f7;--primary-dim:rgba(79,195,247,.12);
+  --green:#81c784;--green-dim:rgba(129,199,132,.12);
+  --orange:#ffb74d;--orange-dim:rgba(255,183,77,.12);
+  --red:#ef5350;--red-dim:rgba(239,83,80,.12);
+  --purple:#b39ddb;--purple-dim:rgba(179,157,219,.12);
+  --pink:#f06292;--pink-dim:rgba(240,98,146,.12);
+  --cyan:#4dd0e1;--cyan-dim:rgba(77,208,225,.12);
+  --bg0:#080810;--bg1:#0d0d15;--bg2:#13131c;--bg3:#1a1a25;--bg4:#222230;--bd:#2a2a3a;
+  --t1:#f0f0f8;--t2:#9090a8;--t3:#505068;
+  --radius:10px;--sidebar-w:230px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg0);color:var(--t1);display:flex;min-height:100vh;font-size:13px;line-height:1.5}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg1)}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+a{color:var(--primary);text-decoration:none}
+
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar-w);background:var(--bg1);border-right:1px solid var(--bd);
+  display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;overflow-y:auto}
+.sidebar-logo{padding:20px 18px 16px;border-bottom:1px solid var(--bd)}
+.sidebar-logo .name{font-size:17px;font-weight:800;color:var(--primary);letter-spacing:.5px}
+.sidebar-logo .ver{font-size:11px;color:var(--t3);margin-top:2px}
+.nav-section{padding:14px 0 6px 18px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;
+  color:var(--t2);font-size:13px;border-left:3px solid transparent;transition:.15s;position:relative}
+.nav-item:hover{background:var(--bg3);color:var(--t1)}
+.nav-item.active{color:var(--primary);border-left-color:var(--primary);background:var(--primary-dim)}
+.nav-icon{width:20px;text-align:center;font-size:15px;flex-shrink:0}
+.nav-badge{position:absolute;right:14px;background:var(--red);color:#fff;font-size:10px;
+  padding:1px 6px;border-radius:10px;font-weight:600}
+
+/* ── Main ── */
+.main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-height:100vh}
+.topbar{height:54px;background:var(--bg1);border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:space-between;padding:0 28px;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:14px}
+
+.page-container{padding:24px 28px 40px;flex:1;overflow-y:auto}
+.page{display:none}.page.active{display:block}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:inherit;transition:.15s}
+.btn-primary{background:var(--primary);color:#000}.btn-primary:hover{background:#7cd9fc}
+.btn-ghost{background:transparent;color:var(--t2);border-color:var(--bd)}.btn-ghost:hover{color:var(--t1);border-color:var(--t2)}
+.btn-green{background:var(--green);color:#000}.btn-green:hover{background:#a5d6a7}
+.btn-orange{background:var(--orange);color:#000}
+.btn-red{background:transparent;color:var(--red);border-color:var(--red)}
+.btn-sm{padding:5px 12px;font-size:11px;border-radius:6px}
+.btn-lg{padding:11px 32px;font-size:15px;border-radius:10px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Stats ── */
+.stats-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.stat-card{flex:1;min-width:160px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:18px 20px}
+.stat-label{font-size:11px;color:var(--t3);margin-bottom:6px;font-weight:500}
+.stat-value{font-size:28px;font-weight:800}
+.stat-sub{font-size:11px;color:var(--t2);margin-top:4px}
+.stat-card.c-primary .stat-value{color:var(--primary)}
+.stat-card.c-green .stat-value{color:var(--green)}
+.stat-card.c-orange .stat-value{color:var(--orange)}
+.stat-card.c-red .stat-value{color:var(--red)}
+.stat-card.c-purple .stat-value{color:var(--purple)}
+
+/* ── Panel ── */
+.panel{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.panel-title{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.panel-title .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot-blue{background:var(--primary)}.dot-green{background:var(--green)}.dot-orange{background:var(--orange)}.dot-red{background:var(--red)}
+
+/* ── Form ── */
+.form-row{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+.form-group{flex:1;min-width:160px;display:flex;flex-direction:column;gap:5px}
+.form-group.full{flex:100%;min-width:0}
+.form-group label{font-size:11px;color:var(--t3);font-weight:500}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--bd);color:var(--t1);
+  padding:8px 11px;border-radius:7px;font-size:12px;font-family:inherit;transition:.15s;outline:none}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(79,195,247,.12)}
+.form-group textarea{resize:vertical;min-height:70px}
+.form-hint{font-size:10px;color:var(--t3);margin-top:2px}
+
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-primary{background:var(--primary-dim);color:var(--primary)}.badge-primary::before{background:var(--primary)}
+.badge-green{background:var(--green-dim);color:var(--green)}.badge-green::before{background:var(--green)}
+.badge-orange{background:var(--orange-dim);color:var(--orange)}.badge-orange::before{background:var(--orange)}
+.badge-red{background:var(--red-dim);color:var(--red)}.badge-red::before{background:var(--red)}
+.badge-purple{background:var(--purple-dim);color:var(--purple)}.badge-purple::before{background:var(--purple)}
+.badge-pink{background:var(--pink-dim);color:var(--pink)}.badge-pink::before{background:var(--pink)}
+.badge-cyan{background:var(--cyan-dim);color:var(--cyan)}.badge-cyan::before{background:var(--cyan)}
+.badge-plain{background:var(--bg4);color:var(--t2)}.badge-plain::before{background:var(--t3)}
+
+/* ── Table ── */
+.table-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:11px 14px;font-size:11px;color:var(--t3);font-weight:500;border-bottom:1px solid var(--bd);background:var(--bg3);white-space:nowrap}
+td{padding:12px 14px;font-size:13px;color:var(--t2);border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+td.t1{color:var(--t1);font-weight:500}
+
+/* ── Step pills ── */
+.steps-row{display:flex;gap:4px;flex-wrap:wrap}
+.step-pill{padding:2px 8px;border-radius:4px;font-size:10px;white-space:nowrap;font-weight:500}
+.step-pill.done{background:var(--green-dim);color:var(--green)}
+.step-pill.run{background:var(--primary-dim);color:var(--primary);animation:pulse 1.5s infinite}
+.step-pill.wait{background:var(--bg4);color:var(--t3)}
+.step-pill.hold{background:var(--orange-dim);color:var(--orange)}
+.step-pill.fail{background:var(--red-dim);color:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* ── Progress bar ── */
+.progress-bar{width:100%;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;border-radius:2px;transition:width .3s}
+
+/* ── Filter row ── */
+.filter-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;
+  border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:inherit;transition:.15s}
+.filter-btn:hover,.filter-btn.active{background:var(--primary-dim);border-color:var(--primary);color:var(--primary)}
+
+/* ── Section ── */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.section-title{font-size:16px;font-weight:700}
+
+/* ── Pipeline Wizard ── */
+.wizard-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.wizard-header{padding:20px 24px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.wizard-header h3{font-size:16px;font-weight:700}
+.wizard-steps{display:flex;align-items:center;padding:18px 24px;border-bottom:1px solid var(--bd);overflow-x:auto;gap:0}
+.wstep{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.wstep-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;background:var(--bg4);color:var(--t3);border:2px solid var(--bd);flex-shrink:0}
+.wstep.active .wstep-num{background:var(--primary);color:#000;border-color:var(--primary)}
+.wstep.done .wstep-num{background:var(--green-dim);color:var(--green);border-color:var(--green)}
+.wstep-label{font-size:12px;color:var(--t3)}
+.wstep.active .wstep-label{color:var(--t1);font-weight:600}
+.wstep.done .wstep-label{color:var(--green)}
+.wstep-divider{flex:1;height:2px;background:var(--bd);min-width:20px;max-width:50px;margin:0 8px}
+.wstep.done+.wstep-divider{background:var(--green)}
+
+.wizard-body{padding:28px 24px;min-height:400px}
+.step-panel{display:none}.step-panel.active{display:block}
+.wizard-footer{padding:16px 24px;border-top:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+
+/* ── Platform select grid (分组) ── */
+.platform-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.platform-chip{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--bd);background:var(--bg3);cursor:pointer;transition:.15s;font-size:12px}
+.platform-chip:hover{border-color:var(--primary);background:rgba(79,195,247,.04)}
+.platform-chip.selected{border-color:var(--primary);background:var(--primary-dim)}
+.platform-chip .pc-check{width:16px;height:16px;border-radius:4px;border:2px solid var(--bd);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;transition:.15s}
+.platform-chip.selected .pc-check{border-color:var(--primary);background:var(--primary);color:#000}
+.platform-chip .pc-name{flex:1;color:var(--t2);line-height:1.2}.platform-chip.selected .pc-name{color:var(--t1)}
+.platform-chip .pc-dept{font-size:9px;color:var(--t3);flex-shrink:0}
+.platform-chip.selected .pc-dept{color:var(--primary)}
+
+.dept-group{margin-bottom:12px}
+.dept-group-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;padding:0 2px}
+.dept-group-title{font-size:12px;font-weight:600;color:var(--t2)}
+.dept-group-actions{display:flex;gap:6px;align-items:center}
+.dept-select-all{font-size:10px;color:var(--primary);cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid var(--primary);background:transparent;font-family:inherit}
+.dept-select-all:hover{background:var(--primary-dim)}
+
+/* ── Search box ── */
+.search-box{width:100%;background:var(--bg3);border:1px solid var(--bd);color:var(--t1);
+  padding:8px 12px 8px 32px;border-radius:8px;font-size:12px;font-family:inherit;outline:none;transition:.15s;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%23505068' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:10px center}
+.search-box:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(79,195,247,.12)}
+
+/* ── Upload zone ── */
+.upload-zone{border:2px dashed var(--bd);border-radius:var(--radius);padding:28px;text-align:center;
+  color:var(--t3);cursor:pointer;transition:.2s;margin-bottom:14px}
+.upload-zone:hover{border-color:var(--primary);color:var(--t2);background:rgba(79,195,247,.03)}
+.upload-icon{font-size:32px;margin-bottom:6px}
+.upload-hint{font-size:13px}.upload-sub{font-size:11px;color:var(--t3);margin-top:3px}
+.upload-zone.has-file{border-style:solid;border-color:var(--green);background:var(--green-dim);padding:12px}
+
+/* ── AI output box ── */
+.ai-box{background:var(--bg1);border:1px solid var(--primary);border-radius:8px;padding:14px;margin-top:12px}
+.ai-box-label{font-size:10px;color:var(--primary);margin-bottom:8px;font-weight:600;letter-spacing:.5px}
+
+/* ── Tag input ── */
+.tag-container{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;background:var(--bg3);border:1px solid var(--bd);border-radius:7px;min-height:36px;cursor:text;transition:.15s}
+.tag-container:focus-within{border-color:var(--primary);box-shadow:0 0 0 2px rgba(79,195,247,.12)}
+.tag-item{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--primary-dim);
+  color:var(--primary);border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap}
+.tag-item .tag-remove{cursor:pointer;font-size:13px;line-height:1;opacity:.7}.tag-item .tag-remove:hover{opacity:1}
+.tag-input{border:none;background:transparent;color:var(--t1);font-size:11px;outline:none;flex:1;min-width:80px;font-family:inherit}
+
+/* ── Config grid ── */
+.config-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.config-card{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:18px;transition:.15s}
+.config-card:hover{border-color:var(--primary)}
+.config-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.config-card-title{font-size:14px;font-weight:700}
+.config-param{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--bd)}
+.config-param:last-child{border-bottom:none}
+.config-param-key{color:var(--t3)}.config-param-val{color:var(--t2);max-width:160px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.config-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:6px}
+.config-tags .mini-tag{font-size:9px;padding:1px 6px;background:var(--bg4);color:var(--t2);border-radius:3px}
+
+/* ── Toolbox grid ── */
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.tool-card{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:16px;
+  cursor:pointer;transition:.2s;display:flex;flex-direction:column;gap:5px}
+.tool-card:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:0 4px 20px rgba(79,195,247,.08)}
+.tool-card .tc-icon{font-size:24px;margin-bottom:2px}
+.tool-card .tc-name{font-size:13px;font-weight:600}
+.tool-card .tc-desc{font-size:11px;color:var(--t2);line-height:1.4}
+
+/* ── Sub-task expand ── */
+.task-expand{display:none;background:var(--bg1);border-top:1px solid var(--bd)}
+.task-expand.open{display:table-row}
+.sub-task-row{display:flex;align-items:center;gap:14px;padding:8px 14px 8px 44px;border-bottom:1px solid rgba(42,42,58,.5);font-size:12px}
+.sub-task-row:last-child{border-bottom:none}
+
+/* ── Chart mock ── */
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:140px;padding:0 10px}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.bar-col .bar{width:100%;min-width:20px;border-radius:4px 4px 0 0;transition:.3s}
+.bar-col .bar-label{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px}
+.bar-col .bar-val{font-size:10px;color:var(--t2);font-weight:600}
+
+/* ── Confirm / review box ── */
+.review-box{background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:16px;margin-top:14px}
+.review-box-title{font-size:12px;color:var(--t2);font-weight:600;margin-bottom:10px}
+
+/* ── Responsive ── */
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0}.stats-row{flex-direction:column}
+  .platform-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;
+  align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;width:100%;max-width:800px;overflow:hidden}
+.modal-head{padding:18px 24px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:17px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--t2);font-size:24px;cursor:pointer;padding:4px}
+.modal-close:hover{color:var(--t1)}
+.modal-body{padding:24px;max-height:70vh;overflow-y:auto}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;gap:8px}
+
+/* ── Watermark preview cards ── */
+.wm-preview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:12px}
+.wm-card{background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px;transition:.2s}
+.wm-card.processing{border-color:var(--primary)}
+.wm-card.wm-done{border-color:var(--green)}
+.wm-card.wm-fail{border-color:var(--red)}
+.wm-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.wm-card-platform{font-size:13px;font-weight:600}
+.wm-card-body{font-size:11px;color:var(--t2);line-height:1.6}
+.wm-card-body .wm-param{display:flex;justify-content:space-between;padding:2px 0}
+
+/* ── Prototype banner ── */
+.proto-banner{background:linear-gradient(90deg,rgba(79,195,247,.08),rgba(179,157,219,.08));
+  border:1px solid rgba(79,195,247,.2);border-radius:8px;padding:10px 16px;margin-bottom:20px;
+  font-size:12px;color:var(--primary);display:flex;align-items:center;gap:8px}
+
+/* ── Toast ── */
+.toast{position:fixed;top:20px;right:20px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;
+  padding:12px 20px;font-size:13px;z-index:999;transform:translateX(120%);transition:.3s;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast.show{transform:translateX(0)}
+.toast.toast-error{border-color:var(--red);color:var(--red)}
+.toast.toast-success{border-color:var(--green);color:var(--green)}
+
+/* ── Skeleton shimmer ── */
+.skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%);
+  background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:4px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Notification bell ── */
+.notif-bell{position:relative;cursor:pointer;font-size:18px;padding:4px}
+.notif-dot{position:absolute;top:2px;right:2px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid var(--bg1)}
+
+/* ── Login overlay ── */
+.login-overlay{position:fixed;inset:0;background:var(--bg0);z-index:300;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;padding:40px;width:380px;text-align:center}
+.login-box h2{font-size:22px;font-weight:800;color:var(--primary);margin-bottom:4px}
+.login-box .login-sub{font-size:12px;color:var(--t3);margin-bottom:28px}
+.login-box .form-group{text-align:left;margin-bottom:14px}
+.login-box .btn{width:100%;justify-content:center;margin-top:8px}
+
+/* ── Error detail collapse ── */
+.error-detail{margin-top:6px;padding:8px 10px;background:var(--bg1);border:1px solid var(--red);border-radius:6px;font-size:11px;color:var(--red);display:none}
+.error-detail.open{display:block}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     LOGIN OVERLAY (P2: 登录页)
+     ══════════════════════════════════════════════ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>OmniPublish</h2>
+    <div class="login-sub">V2.0 · 全链路发帖工作台</div>
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="loginUser" placeholder="请输入用户名" value="zhangwei">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="loginPass" placeholder="请输入密码" value="••••••••">
+    </div>
+    <button class="btn btn-primary btn-lg" id="loginBtn">登 录</button>
+    <div style="margin-top:14px;font-size:11px;color:var(--t3)">忘记密码？请联系管理员</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SIDEBAR
+     ══════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="name">OmniPublish</div>
+    <div class="ver">V2.0 · 全链路发帖工作台</div>
+  </div>
+
+  <div class="nav-section">核心</div>
+  <div class="nav-item active" data-page="dashboard">
+    <span class="nav-icon">📊</span>工作台
+  </div>
+  <div class="nav-item" data-page="pipeline">
+    <span class="nav-icon">🚀</span>发帖流水线
+    <span class="nav-badge">New</span>
+  </div>
+  <div class="nav-item" data-page="tasks">
+    <span class="nav-icon">📋</span>任务看板
+    <span class="nav-badge" style="background:var(--orange)">6</span>
+  </div>
+
+  <div class="nav-section">数据</div>
+  <div class="nav-item" data-page="analytics">
+    <span class="nav-icon">📈</span>数据统计
+  </div>
+
+  <div class="nav-section">工具</div>
+  <div class="nav-item" data-page="toolbox">
+    <span class="nav-icon">🧰</span>工具箱
+  </div>
+
+  <div class="nav-section">管理</div>
+  <div class="nav-item" data-page="platforms">
+    <span class="nav-icon">⚙️</span>业务线管理
+  </div>
+  <div class="nav-item" data-page="accounts">
+    <span class="nav-icon">🔑</span>账号管理
+  </div>
+
+  <div style="flex:1"></div>
+  <div style="padding:14px 18px;border-top:1px solid var(--bd);font-size:11px;color:var(--t3)">
+    <div>服务状态：<span style="color:var(--green)">● 在线</span></div>
+    <div style="margin-top:4px">👤 张伟 · 1部4组</div>
+    <div style="margin-top:2px;color:var(--t3);cursor:pointer" id="logoutBtn">退出登录</div>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════
+     MAIN
+     ══════════════════════════════════════════════ -->
+<div class="main" id="mainArea">
+  <div class="topbar">
+    <span class="topbar-title" id="topbar-title">工作台</span>
+    <div class="topbar-right">
+      <!-- P2: 通知中心 -->
+      <div class="notif-bell" id="notifBell" title="通知">
+        🔔<div class="notif-dot"></div>
+      </div>
+      <span style="font-size:12px;color:var(--t2)">👤 张伟 · 1部4组</span>
+      <button class="btn btn-primary" data-page="pipeline">＋ 新建发帖任务</button>
+    </div>
+  </div>
+  <div class="page-container">
+
+<!-- ════════════════════════════════════════
+     PAGE: DASHBOARD
+     ════════════════════════════════════════ -->
+<div class="page active" id="page-dashboard">
+  <div class="proto-banner">💡 原型演示 v2 — OmniPublish V2.0 全链路发帖工作台 · 已改进：平台分组搜索、分类动态加载、水印上传预览、步骤校验、登录页、通知中心等</div>
+
+  <div class="stats-row">
+    <div class="stat-card c-primary"><div class="stat-label">今日发帖</div><div class="stat-value">47</div><div class="stat-sub">较昨日 ↑ 8</div></div>
+    <div class="stat-card c-green"><div class="stat-label">已完成</div><div class="stat-value">38</div><div class="stat-sub">成功率 80.9%</div></div>
+    <div class="stat-card c-orange"><div class="stat-label">流水线进行中</div><div class="stat-value">6</div><div class="stat-sub">3 个待人工确认</div></div>
+    <div class="stat-card c-red"><div class="stat-label">发布失败</div><div class="stat-value">3</div><div class="stat-sub">2 个上传超时</div></div>
+    <div class="stat-card c-purple"><div class="stat-label">覆盖平台</div><div class="stat-value">35</div><div class="stat-sub">今日活跃 18 个</div></div>
+  </div>
+
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div style="flex:2;min-width:500px">
+      <div class="section-header">
+        <div class="section-title">最近流水线任务</div>
+        <button class="btn btn-ghost btn-sm" data-page="tasks">查看全部 →</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>标题</th><th>目标平台</th><th>流水线进度</th><th>状态</th><th>时间</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="t1">#0052</td><td class="t1">极品女神私密视频流出…</td>
+              <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-primary" style="font-size:10px;padding:1px 6px">91视频</span><span class="badge badge-green" style="font-size:10px;padding:1px 6px">海角社区</span><span class="badge badge-plain" style="font-size:10px;padding:1px 6px">+3</span></div></td>
+              <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill run">封面</span><span class="step-pill wait">水印</span><span class="step-pill wait">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:40%;background:var(--primary)"></div></div></td>
+              <td><span class="badge badge-primary">进行中</span></td><td style="white-space:nowrap">10:42</td>
+            </tr>
+            <tr>
+              <td class="t1">#0051</td><td class="t1">大学生情侣出租屋偷拍…</td>
+              <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">黑料情报局</span><span class="badge badge-purple" style="font-size:10px;padding:1px 6px">91porn</span></div></td>
+              <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill done">封面</span><span class="step-pill done">水印</span><span class="step-pill run">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:78%;background:var(--primary)"></div></div></td>
+              <td><span class="badge badge-orange">切片中</span></td><td style="white-space:nowrap">10:28</td>
+            </tr>
+            <tr>
+              <td class="t1">#0050</td><td class="t1">网红主播浴室大尺度直播…</td>
+              <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-pink" style="font-size:10px;padding:1px 6px">糖心</span><span class="badge badge-cyan" style="font-size:10px;padding:1px 6px">9色视频</span><span class="badge badge-plain" style="font-size:10px;padding:1px 6px">+5</span></div></td>
+              <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill done">封面</span><span class="step-pill done">水印</span><span class="step-pill done">上传</span><span class="step-pill done">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div></td>
+              <td><span class="badge badge-green">已完成</span></td><td style="white-space:nowrap">10:05</td>
+            </tr>
+            <tr>
+              <td class="t1">#0049</td><td class="t1">某高校教授丑闻曝光…</td>
+              <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-red" style="font-size:10px;padding:1px 6px">18黑料</span><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">黑料吃瓜</span></div></td>
+              <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill hold">封面</span><span class="step-pill wait">水印</span><span class="step-pill wait">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:35%;background:var(--orange)"></div></div></td>
+              <td><span class="badge badge-orange">待确认</span></td><td style="white-space:nowrap">09:51</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="flex:1;min-width:280px">
+      <div class="section-header"><div class="section-title">今日各平台发帖</div></div>
+      <div class="panel" style="margin:0">
+        <div class="bar-chart" style="height:180px">
+          <div class="bar-col"><div class="bar-val">12</div><div class="bar" style="height:85%;background:var(--primary)"></div><div class="bar-label">91视频</div></div>
+          <div class="bar-col"><div class="bar-val">9</div><div class="bar" style="height:64%;background:var(--green)"></div><div class="bar-label">海角社区</div></div>
+          <div class="bar-col"><div class="bar-val">7</div><div class="bar" style="height:50%;background:var(--orange)"></div><div class="bar-label">黑料情报</div></div>
+          <div class="bar-col"><div class="bar-val">6</div><div class="bar" style="height:43%;background:var(--purple)"></div><div class="bar-label">91porn</div></div>
+          <div class="bar-col"><div class="bar-val">5</div><div class="bar" style="height:36%;background:var(--pink)"></div><div class="bar-label">糖心</div></div>
+          <div class="bar-col"><div class="bar-val">4</div><div class="bar" style="height:28%;background:var(--cyan)"></div><div class="bar-label">9色视频</div></div>
+          <div class="bar-col"><div class="bar-val">4</div><div class="bar" style="height:28%;background:var(--red)"></div><div class="bar-label">其他</div></div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="section-title" style="font-size:14px;margin-bottom:10px">待我处理 <span style="font-size:11px;color:var(--t3);font-weight:400">（仅显示我的任务）</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;cursor:pointer"><div><div style="font-size:12px;font-weight:600;color:var(--t1)">#0052 封面待确认</div><div style="font-size:11px;color:var(--t3);margin-top:2px">3 张候选封面等待选择</div></div><span class="badge badge-orange" style="font-size:10px">待确认</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;cursor:pointer"><div><div style="font-size:12px;font-weight:600;color:var(--t1)">#0049 封面不满意</div><div style="font-size:11px;color:var(--t3);margin-top:2px">需要手动重新选图生成</div></div><span class="badge badge-red" style="font-size:10px">需处理</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;cursor:pointer"><div><div style="font-size:12px;font-weight:600;color:var(--t1)">#0051 等待视频切片</div><div style="font-size:11px;color:var(--t3);margin-top:2px">预计还需 3 分钟</div></div><span class="badge badge-primary" style="font-size:10px">等待中</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: PIPELINE (发帖流水线 — 核心)
+     ════════════════════════════════════════ -->
+<div class="page" id="page-pipeline">
+  <div class="proto-banner">🔗 自动化流水线 — 写文案 → 确认 → 图片重命名 → 封面制作 → 选平台加水印 → 上传发布，每步确认后自动推进下一步</div>
+
+  <div class="wizard-wrap">
+    <div class="wizard-header">
+      <h3>新建发帖任务 #0053</h3>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="badge badge-primary">流水线模式</span>
+        <button class="btn btn-ghost btn-sm">保存草稿</button>
+      </div>
+    </div>
+
+    <div class="wizard-steps" id="wizardSteps">
+      <div class="wstep active" data-step="0"><div class="wstep-num">1</div><div class="wstep-label">素材 & 平台</div></div>
+      <div class="wstep-divider"></div>
+      <div class="wstep" data-step="1"><div class="wstep-num">2</div><div class="wstep-label">文案生成</div></div>
+      <div class="wstep-divider"></div>
+      <div class="wstep" data-step="2"><div class="wstep-num">3</div><div class="wstep-label">图片重命名</div></div>
+      <div class="wstep-divider"></div>
+      <div class="wstep" data-step="3"><div class="wstep-num">4</div><div class="wstep-label">封面制作</div></div>
+      <div class="wstep-divider"></div>
+      <div class="wstep" data-step="4"><div class="wstep-num">5</div><div class="wstep-label">水印处理</div></div>
+      <div class="wstep-divider"></div>
+      <div class="wstep" data-step="5"><div class="wstep-num">6</div><div class="wstep-label">上传 & 发布</div></div>
+    </div>
+
+    <div class="wizard-body">
+
+      <!-- ──── Step 1: 素材 & 平台选择 (改进：分组+搜索+部组标注) ──── -->
+      <div class="step-panel active" id="step-0">
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:300px">
+            <h4 style="margin-bottom:12px;font-size:14px">素材文件夹</h4>
+            <div class="upload-zone">
+              <div class="upload-icon">📁</div>
+              <div class="upload-hint">拖入素材文件夹 或 点击选择</div>
+              <div class="upload-sub">文件夹应包含：图片、视频、(可选)文案 TXT</div>
+            </div>
+            <div class="form-group">
+              <label>或手动输入路径</label>
+              <input type="text" id="folderPath" placeholder="/Users/Shared/素材/2026-04-09_极品女神" value="/Users/Shared/素材/2026-04-09_极品女神">
+            </div>
+            <div style="margin-top:10px;padding:10px 14px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2)">
+              <div style="font-weight:600;color:var(--t1);margin-bottom:6px">📂 已识别文件：</div>
+              <div>🖼️ 图片 × 8 (IMG_001.jpg ~ IMG_008.jpg)</div>
+              <div>🎬 视频 × 2 (clip_01.mp4, clip_02.mp4)</div>
+              <div>📄 文案 × 0 (未检测到 TXT)</div>
+            </div>
+          </div>
+          <div style="flex:1.5;min-width:400px">
+            <h4 style="margin-bottom:12px;font-size:14px">选择发布平台 <span style="font-size:12px;color:var(--t3);font-weight:400">（支持多选，一次发多个平台）</span></h4>
+            <!-- P0: 搜索框 -->
+            <input type="text" class="search-box" id="platformSearch" placeholder="搜索平台名称…" style="margin-bottom:10px">
+            <!-- P0: 分组渲染 -->
+            <div id="platformGrid"></div>
+            <div style="margin-top:10px;font-size:12px;color:var(--t2)">
+              已选择 <strong id="selectedCount" style="color:var(--primary)">0</strong> 个平台 · 水印将根据各平台配置自动处理
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──── Step 2: 文案生成 (改进：分类动态加载+加载态) ──── -->
+      <div class="step-panel" id="step-1">
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:280px">
+            <h4 style="margin-bottom:12px;font-size:14px">文案输入</h4>
+            <div class="form-row">
+              <div class="form-group" style="flex:2"><label>主角</label><input type="text" placeholder="主角名 / 描述" value="极品女神"></div>
+              <div class="form-group" style="flex:2"><label>事件</label><input type="text" placeholder="发生了什么事" value="私密视频意外流出"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>生活照描述</label><input type="text" value="8张自拍写真"></div>
+              <div class="form-group"><label>视频内容</label><input type="text" value="2段私密视频"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>标题字数</label><div style="display:flex;gap:4px;align-items:center"><input type="number" value="25" style="width:60px"><span style="color:var(--t3)">~</span><input type="number" value="30" style="width:60px"></div></div>
+              <div class="form-group"><label>关键词数</label><input type="number" value="10"></div>
+              <div class="form-group"><label>正文字数</label><input type="number" value="300"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>文风</label>
+                <select><option>反转打脸风</option><option>搞笑玩梗风</option><option>麻辣吐槽风</option><option>深情共情风</option><option>悬念揭秘风</option></select>
+              </div>
+              <div class="form-group"><label>作者</label><input type="text" value="爆料小王"></div>
+            </div>
+            <!-- P0: 分类字段动态加载 -->
+            <div class="form-group" id="categoryGroup" style="margin-bottom:14px">
+              <label>分类 <span style="color:var(--primary);font-weight:400" id="categoryHint">（已从 Step 1 选中的平台加载）</span></label>
+              <div class="tag-container" id="categoryTags">
+                <span class="tag-item">今日吃瓜 <span class="tag-remove" data-tag="今日吃瓜">×</span></span>
+                <span class="tag-item">网红黑料 <span class="tag-remove" data-tag="网红黑料">×</span></span>
+                <span class="tag-item">热门大瓜 <span class="tag-remove" data-tag="热门大瓜">×</span></span>
+                <input type="text" class="tag-input" placeholder="输入分类后回车添加…" id="categoryInput">
+              </div>
+              <div class="form-hint">已合并 5 个平台的分类库（并集），发布时各平台只使用自己支持的分类</div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:8px" id="generateCopyBtn">🤖 AI 生成文案</button>
+          </div>
+          <div style="flex:1;min-width:280px">
+            <h4 style="margin-bottom:12px;font-size:14px">生成结果 <span style="font-size:11px;color:var(--orange);font-weight:400">← 请确认或修改后点击「确认文案」推进下一步</span></h4>
+            <!-- P1: 骨架屏加载态 -->
+            <div id="aiResultArea">
+              <div class="form-group"><label>标题</label><input type="text" id="ai-title" placeholder="点击左侧「AI 生成文案」开始…"></div>
+              <div class="form-group"><label>关键词</label><input type="text" id="ai-kw" placeholder="等待 AI 生成..."></div>
+              <div class="form-group"><label>正文（可编辑）</label><textarea id="ai-body" rows="8" placeholder="等待 AI 生成..."></textarea></div>
+            </div>
+            <div id="aiLoadingArea" style="display:none">
+              <div class="skeleton" style="height:36px;margin-bottom:10px"></div>
+              <div class="skeleton" style="height:36px;margin-bottom:10px"></div>
+              <div class="skeleton" style="height:160px"></div>
+              <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--primary)">🤖 AI 文案生成中，预计 5~10 秒…</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-green" id="confirmCopyBtn" disabled>✅ 确认文案，下一步 →</button>
+              <button class="btn btn-ghost" id="regenerateCopyBtn" disabled>🔄 重新生成</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──── Step 3: 图片重命名 (改进：实时联动预览) ──── -->
+      <div class="step-panel" id="step-2">
+        <h4 style="margin-bottom:12px;font-size:14px">图片批量重命名</h4>
+        <p style="font-size:12px;color:var(--t2);margin-bottom:14px">标题关键词已自动填入作为文件名前缀，你可以修改。确认后图片将自动重命名并推进到下一步。</p>
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label>重命名前缀</label>
+            <input type="text" id="rename-prefix-v2" value="极品女神私密视频">
+            <div class="form-hint">自动从标题提取，可手动修改</div>
+          </div>
+          <div class="form-group">
+            <label>起始编号</label>
+            <input type="number" id="rename-start" value="1">
+          </div>
+          <div class="form-group">
+            <label>分隔符</label>
+            <select id="rename-sep"><option value="_">下划线 _</option><option value="-">短横线 -</option></select>
+          </div>
+        </div>
+        <div class="review-box">
+          <div class="review-box-title">预览重命名结果 <span style="font-size:10px;color:var(--t3);font-weight:400">（实时联动）</span></div>
+          <div id="renamePreview" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px">
+            <!-- JS 动态渲染 -->
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px">
+          <button class="btn btn-green" id="confirmRenameBtn">✅ 确认重命名，下一步 →</button>
+        </div>
+      </div>
+
+      <!-- ──── Step 4: 封面制作 (改进：可交互选中) ──── -->
+      <div class="step-panel" id="step-3">
+        <h4 style="margin-bottom:12px;font-size:14px">封面制作</h4>
+        <p style="font-size:12px;color:var(--t2);margin-bottom:14px">系统将自动从素材图片中生成封面候选。请选择满意的封面，或重新生成。</p>
+        <div class="form-row">
+          <div class="form-group"><label>拼接方式</label><select><option>三拼（3 张横向拼接）</option><option>单图（单张裁剪）</option><option>双拼</option></select></div>
+          <div class="form-group"><label>封面尺寸</label><select><option>1300 × 640（标准横版）</option><option>800 × 450</option><option>900 × 1200（竖版）</option></select></div>
+          <div class="form-group"><label>头顶留白 %</label><input type="number" value="15"></div>
+        </div>
+        <button class="btn btn-primary" style="margin-bottom:14px">🖼️ 生成封面候选</button>
+
+        <div id="coverGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <div class="cover-option selected" data-cover="A" style="border:2px solid var(--primary);border-radius:8px;overflow:hidden;cursor:pointer;position:relative">
+            <div style="background:var(--bg3);height:120px;display:flex;align-items:center;justify-content:center;color:var(--t3)">封面候选 A (三拼)</div>
+            <div class="cover-check" style="position:absolute;top:6px;right:6px;background:var(--primary);color:#000;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700">已选</div>
+          </div>
+          <div class="cover-option" data-cover="B" style="border:2px solid var(--bd);border-radius:8px;overflow:hidden;cursor:pointer;position:relative">
+            <div style="background:var(--bg3);height:120px;display:flex;align-items:center;justify-content:center;color:var(--t3)">封面候选 B (三拼)</div>
+            <div class="cover-check" style="display:none;position:absolute;top:6px;right:6px;background:var(--primary);color:#000;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700">已选</div>
+          </div>
+          <div class="cover-option" data-cover="C" style="border:2px solid var(--bd);border-radius:8px;overflow:hidden;cursor:pointer;position:relative">
+            <div style="background:var(--bg3);height:120px;display:flex;align-items:center;justify-content:center;color:var(--t3)">封面候选 C (单图)</div>
+            <div class="cover-check" style="display:none;position:absolute;top:6px;right:6px;background:var(--primary);color:#000;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700">已选</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px">
+          <button class="btn btn-green" id="confirmCoverBtn">✅ 使用选中封面，下一步 →</button>
+          <button class="btn btn-ghost">🔄 重新生成</button>
+          <button class="btn btn-ghost">📁 手动选图</button>
+        </div>
+      </div>
+
+      <!-- ──── Step 5: 水印处理 (改进：处理进度展示) ──── -->
+      <div class="step-panel" id="step-4">
+        <h4 style="margin-bottom:12px;font-size:14px">水印处理 <span style="font-size:12px;color:var(--t2);font-weight:400">— 根据已选平台自动匹配水印配置</span></h4>
+        <!-- 确认前：展示水印方案 -->
+        <div id="wmConfirmView">
+          <p style="font-size:12px;color:var(--t2);margin-bottom:14px">以下是各目标平台的水印方案，确认后系统将自动为图片和视频添加对应水印。</p>
+          <div class="wm-preview-grid" id="wmPreviewGrid">
+            <div class="wm-card"><div class="wm-card-head"><span class="wm-card-platform">91视频web</span><span class="badge badge-primary" style="font-size:10px;padding:1px 6px">图片+视频</span></div><div class="wm-card-body"><div class="wm-param"><span>图片水印</span><span style="color:var(--t1)">91video_logo.png · 右下角</span></div><div class="wm-param"><span>视频水印</span><span style="color:var(--t1)">91video.mov · 四角轮转</span></div><div class="wm-param"><span>水印缩放</span><span style="color:var(--t1)">35%</span></div></div></div>
+            <div class="wm-card"><div class="wm-card-head"><span class="wm-card-platform">海角社区</span><span class="badge badge-green" style="font-size:10px;padding:1px 6px">图片+视频</span></div><div class="wm-card-body"><div class="wm-param"><span>图片水印</span><span style="color:var(--t1)">haijiao_wm.png · 左下角</span></div><div class="wm-param"><span>视频水印</span><span style="color:var(--t1)">haijiao.mov · 固定右下</span></div><div class="wm-param"><span>水印缩放</span><span style="color:var(--t1)">30%</span></div></div></div>
+            <div class="wm-card"><div class="wm-card-head"><span class="wm-card-platform">黑料情报局</span><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">图片+视频</span></div><div class="wm-card-body"><div class="wm-param"><span>图片水印</span><span style="color:var(--t1)">heiliao_logo.png · 右下角</span></div><div class="wm-param"><span>视频水印</span><span style="color:var(--t1)">heiliao.mov · 四角轮转</span></div><div class="wm-param"><span>水印缩放</span><span style="color:var(--t1)">35%</span></div></div></div>
+            <div class="wm-card"><div class="wm-card-head"><span class="wm-card-platform">91porn</span><span class="badge badge-purple" style="font-size:10px;padding:1px 6px">仅视频</span></div><div class="wm-card-body"><div class="wm-param"><span>图片水印</span><span style="color:var(--t3)">无需</span></div><div class="wm-param"><span>视频水印</span><span style="color:var(--t1)">91porn.mov · 固定右下</span></div><div class="wm-param"><span>水印缩放</span><span style="color:var(--t1)">25%</span></div></div></div>
+            <div class="wm-card"><div class="wm-card-head"><span class="wm-card-platform">糖心</span><span class="badge badge-pink" style="font-size:10px;padding:1px 6px">图片+视频</span></div><div class="wm-card-body"><div class="wm-param"><span>图片水印</span><span style="color:var(--t1)">tangxin_logo.png · 右下角</span></div><div class="wm-param"><span>视频水印</span><span style="color:var(--t1)">tangxin.mov · 四角轮转</span></div><div class="wm-param"><span>水印缩放</span><span style="color:var(--t1)">30%</span></div></div></div>
+          </div>
+          <div style="margin-top:16px;padding:12px 16px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2)">
+            💡 共 5 个平台 · 需生成 5 套带水印图片 + 5 套带水印视频 · 预计耗时 ~3 分钟
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px">
+            <button class="btn btn-green" id="startWatermarkBtn">✅ 确认水印方案，开始处理 →</button>
+            <button class="btn btn-ghost">⚙️ 修改单个平台水印</button>
+          </div>
+        </div>
+        <!-- 确认后：处理进度 -->
+        <div id="wmProcessView" style="display:none">
+          <p style="font-size:12px;color:var(--t2);margin-bottom:14px">⏳ 正在为各平台添加水印，请等待处理完成…</p>
+          <div id="wmProgressCards" style="display:flex;flex-direction:column;gap:10px">
+            <!-- JS 动态渲染 -->
+          </div>
+          <div style="margin-top:14px" id="wmDoneActions" style="display:none">
+            <button class="btn btn-green btn-lg" disabled id="wmNextBtn">全部完成后自动进入下一步…</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──── Step 6: 上传 & 发布 (改进：失败详情+重试) ──── -->
+      <div class="step-panel" id="step-5">
+        <h4 style="margin-bottom:12px;font-size:14px">上传 & 发布 <span style="font-size:12px;color:var(--t2);font-weight:400">— 多平台并行上传，切片完成后逐一发布</span></h4>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <!-- Platform 1: 成功 -->
+          <div style="background:var(--bg3);border:1px solid var(--green);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-primary">91视频web</span><span style="font-size:12px;color:var(--green);font-weight:600">✅ 切片完成</span></div>
+              <button class="btn btn-green btn-sm">📝 存草稿</button>
+            </div>
+            <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:4px">视频已上传 · 切片 100% · 可以发布</div>
+          </div>
+          <!-- Platform 2: 上传中 -->
+          <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-green">海角社区</span><span style="font-size:12px;color:var(--primary)">⏳ 切片中 78%</span></div>
+              <button class="btn btn-ghost btn-sm" disabled>等待切片...</button>
+            </div>
+            <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:78%;background:var(--primary)"></div></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:4px">视频已上传 · 切片进行中 · 预计 1 分钟</div>
+          </div>
+          <!-- Platform 3: 失败 (改进：详情+重试) -->
+          <div style="background:var(--bg3);border:1px solid var(--red);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-orange">黑料情报局</span><span style="font-size:12px;color:var(--red);font-weight:600">❌ 上传失败</span></div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" style="color:var(--t2);border:1px solid var(--bd);background:transparent;font-size:11px;border-radius:6px;cursor:pointer" onclick="this.closest('div').parentElement.parentElement.querySelector('.error-detail').classList.toggle('open')">查看日志</button>
+                <button class="btn btn-sm" style="color:var(--orange);border:1px solid var(--orange);background:transparent;font-size:11px;border-radius:6px;cursor:pointer">🔄 重试</button>
+              </div>
+            </div>
+            <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:45%;background:var(--red)"></div></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:4px">上传中断 · 1.2GB / 2.6GB · 已重试 1 次</div>
+            <div class="error-detail">
+              <div style="font-weight:600;margin-bottom:4px">错误详情：</div>
+              <div>2026-04-10 10:42:15 [ERROR] HTTP 502 Bad Gateway</div>
+              <div>2026-04-10 10:42:15 [ERROR] 服务端响应超时 (30s)，连接被重置</div>
+              <div>2026-04-10 10:42:16 [INFO] 自动重试 #1 失败，等待手动重试</div>
+            </div>
+          </div>
+          <!-- Platform 4: 排队 -->
+          <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-purple">91porn</span><span style="font-size:12px;color:var(--t3)">排队等待</span></div>
+              <button class="btn btn-ghost btn-sm" disabled>等待...</button>
+            </div>
+            <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:0%"></div></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:4px">排队中 · 等待上传通道</div>
+          </div>
+          <!-- Platform 5: 排队 -->
+          <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-pink">糖心</span><span style="font-size:12px;color:var(--t3)">排队等待</span></div>
+              <button class="btn btn-ghost btn-sm" disabled>等待...</button>
+            </div>
+            <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:0%"></div></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:4px">排队中 · 等待上传通道</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+          <button class="btn btn-green btn-lg">🚀 一键发布所有已就绪平台</button>
+          <span style="font-size:12px;color:var(--t2)">当前 1 个平台已就绪 · 1 个失败待重试</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="wizard-footer">
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="prevBtn" disabled>← 上一步</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;color:var(--t3)" id="stepHint">第 1 步 / 共 6 步</span>
+        <button class="btn btn-primary btn-sm" id="nextBtn">下一步 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: TASKS (任务看板 — 改进：筛选+搜索+子任务逻辑)
+     ════════════════════════════════════════ -->
+<div class="page" id="page-tasks">
+  <div class="section-header">
+    <div class="section-title">任务看板</div>
+    <div class="filter-row">
+      <input type="text" class="search-box" id="taskSearch" placeholder="搜索任务 ID / 标题 / 平台…" style="width:200px;margin-right:6px">
+      <button class="filter-btn active" data-filter="all">全部</button>
+      <button class="filter-btn" data-filter="running">进行中</button>
+      <button class="filter-btn" data-filter="pending">待确认</button>
+      <button class="filter-btn" data-filter="slicing">切片中</button>
+      <button class="filter-btn" data-filter="done">已完成</button>
+      <button class="filter-btn" data-filter="failed">失败</button>
+    </div>
+  </div>
+
+  <div class="stats-row" style="margin-bottom:16px">
+    <div class="stat-card c-primary" style="padding:12px 16px"><div class="stat-label">进行中</div><div class="stat-value" style="font-size:22px">6</div></div>
+    <div class="stat-card c-orange" style="padding:12px 16px"><div class="stat-label">待确认</div><div class="stat-value" style="font-size:22px">3</div></div>
+    <div class="stat-card c-green" style="padding:12px 16px"><div class="stat-label">今日完成</div><div class="stat-value" style="font-size:22px">38</div></div>
+    <div class="stat-card c-red" style="padding:12px 16px"><div class="stat-label">失败</div><div class="stat-value" style="font-size:22px">3</div></div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="taskTable">
+      <thead><tr><th style="width:30px"></th><th>任务 ID</th><th>标题</th><th>目标平台</th><th>流水线进度</th><th>状态</th><th>编辑</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr data-status="running" class="task-row">
+          <td style="color:var(--t3);font-size:14px;cursor:pointer" class="expand-toggle">▶</td>
+          <td class="t1">#0052</td><td class="t1">极品女神私密视频流出…</td>
+          <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-primary" style="font-size:10px;padding:1px 6px">91视频</span><span class="badge badge-green" style="font-size:10px;padding:1px 6px">海角社区</span><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">黑料情报</span><span class="badge badge-purple" style="font-size:10px;padding:1px 6px">91porn</span><span class="badge badge-pink" style="font-size:10px;padding:1px 6px">糖心</span></div></td>
+          <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill run">封面</span><span class="step-pill wait">水印</span><span class="step-pill wait">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:40%;background:var(--primary)"></div></div></td>
+          <td><span class="badge badge-primary">进行中</span></td><td>张伟</td><td style="white-space:nowrap">10:42</td>
+          <td><button class="btn btn-ghost btn-sm">详情</button></td>
+        </tr>
+        <!-- P2: 子任务修正 — 只展示 Step 5-6 独立状态 -->
+        <tr id="exp1" class="task-expand">
+          <td colspan="9" style="padding:0;background:var(--bg1)">
+            <div style="padding:8px 14px 4px 44px;font-size:11px;color:var(--t3);font-weight:600">各平台分发状态（Step 5-6 独立进度）<span style="font-weight:400;margin-left:6px">共享步骤 1-4 见父任务</span></div>
+            <div class="sub-task-row">
+              <span class="badge badge-primary" style="font-size:10px;padding:1px 6px;min-width:70px;justify-content:center">91视频</span>
+              <span style="color:var(--t3);font-size:11px;width:60px">水印</span><span class="badge badge-plain" style="font-size:10px">待处理</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">上传</span><span class="badge badge-plain" style="font-size:10px">—</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">发布</span><span class="badge badge-plain" style="font-size:10px">—</span>
+            </div>
+            <div class="sub-task-row">
+              <span class="badge badge-green" style="font-size:10px;padding:1px 6px;min-width:70px;justify-content:center">海角社区</span>
+              <span style="color:var(--t3);font-size:11px;width:60px">水印</span><span class="badge badge-plain" style="font-size:10px">待处理</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">上传</span><span class="badge badge-plain" style="font-size:10px">—</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">发布</span><span class="badge badge-plain" style="font-size:10px">—</span>
+            </div>
+            <div class="sub-task-row">
+              <span class="badge badge-orange" style="font-size:10px;padding:1px 6px;min-width:70px;justify-content:center">黑料情报</span>
+              <span style="color:var(--t3);font-size:11px;width:60px">水印</span><span class="badge badge-plain" style="font-size:10px">待处理</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">上传</span><span class="badge badge-plain" style="font-size:10px">—</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">发布</span><span class="badge badge-plain" style="font-size:10px">—</span>
+            </div>
+            <div class="sub-task-row">
+              <span class="badge badge-purple" style="font-size:10px;padding:1px 6px;min-width:70px;justify-content:center">91porn</span>
+              <span style="color:var(--t3);font-size:11px;width:60px">水印</span><span class="badge badge-plain" style="font-size:10px">待处理</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">上传</span><span class="badge badge-plain" style="font-size:10px">—</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">发布</span><span class="badge badge-plain" style="font-size:10px">—</span>
+            </div>
+            <div class="sub-task-row">
+              <span class="badge badge-pink" style="font-size:10px;padding:1px 6px;min-width:70px;justify-content:center">糖心</span>
+              <span style="color:var(--t3);font-size:11px;width:60px">水印</span><span class="badge badge-plain" style="font-size:10px">待处理</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">上传</span><span class="badge badge-plain" style="font-size:10px">—</span>
+              <span style="color:var(--t3);font-size:11px;width:60px;margin-left:10px">发布</span><span class="badge badge-plain" style="font-size:10px">—</span>
+            </div>
+          </td>
+        </tr>
+
+        <tr data-status="slicing" class="task-row">
+          <td style="color:var(--t3);font-size:14px">▶</td><td class="t1">#0051</td><td class="t1">大学生情侣出租屋偷拍…</td>
+          <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">黑料情报局</span><span class="badge badge-purple" style="font-size:10px;padding:1px 6px">91porn</span></div></td>
+          <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill done">封面</span><span class="step-pill done">水印</span><span class="step-pill run">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:78%;background:var(--primary)"></div></div></td>
+          <td><span class="badge badge-orange">切片中</span></td><td>张伟</td><td style="white-space:nowrap">10:28</td>
+          <td><button class="btn btn-ghost btn-sm">详情</button></td>
+        </tr>
+        <tr data-status="done" class="task-row">
+          <td style="color:var(--t3);font-size:14px">▶</td><td class="t1">#0050</td><td class="t1">网红主播浴室大尺度直播…</td>
+          <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-pink" style="font-size:10px;padding:1px 6px">糖心</span><span class="badge badge-cyan" style="font-size:10px;padding:1px 6px">9色视频</span><span class="badge badge-plain" style="font-size:10px;padding:1px 6px">+5</span></div></td>
+          <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill done">封面</span><span class="step-pill done">水印</span><span class="step-pill done">上传</span><span class="step-pill done">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div></td>
+          <td><span class="badge badge-green">已完成</span></td><td>李梦</td><td style="white-space:nowrap">10:05</td>
+          <td><button class="btn btn-ghost btn-sm">详情</button></td>
+        </tr>
+        <tr data-status="pending" class="task-row">
+          <td style="color:var(--t3);font-size:14px">▶</td><td class="t1">#0049</td><td class="t1">某高校教授丑闻曝光…</td>
+          <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-red" style="font-size:10px;padding:1px 6px">18黑料</span><span class="badge badge-orange" style="font-size:10px;padding:1px 6px">黑料吃瓜</span></div></td>
+          <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill hold">封面</span><span class="step-pill wait">水印</span><span class="step-pill wait">上传</span><span class="step-pill wait">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:35%;background:var(--orange)"></div></div></td>
+          <td><span class="badge badge-orange">待确认</span></td><td>王超</td><td style="white-space:nowrap">09:51</td>
+          <td><button class="btn btn-sm" style="color:var(--orange);border:1px solid var(--orange);background:transparent">处理</button></td>
+        </tr>
+        <tr data-status="failed" class="task-row">
+          <td style="color:var(--t3);font-size:14px">▶</td><td class="t1">#0048</td><td class="t1">健身教练与学员私下…</td>
+          <td><div style="display:flex;gap:3px;flex-wrap:wrap"><span class="badge badge-primary" style="font-size:10px;padding:1px 6px">91视频</span><span class="badge badge-cyan" style="font-size:10px;padding:1px 6px">91hub</span></div></td>
+          <td><div class="steps-row"><span class="step-pill done">文案</span><span class="step-pill done">重命名</span><span class="step-pill done">封面</span><span class="step-pill done">水印</span><span class="step-pill done">上传</span><span class="step-pill fail">发布</span></div><div class="progress-bar"><div class="progress-fill" style="width:90%;background:var(--red)"></div></div></td>
+          <td><span class="badge badge-red">发布失败</span></td><td>陈晓</td><td style="white-space:nowrap">09:33</td>
+          <td><button class="btn btn-sm" style="color:var(--red);border:1px solid var(--red);background:transparent">重试</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: ANALYTICS (数据统计) — 保持不变
+     ════════════════════════════════════════ -->
+<div class="page" id="page-analytics">
+  <div class="section-header"><div class="section-title">数据统计</div><div class="filter-row"><button class="filter-btn active">今日</button><button class="filter-btn">本周</button><button class="filter-btn">本月</button><button class="filter-btn">自定义</button></div></div>
+  <div class="stats-row">
+    <div class="stat-card c-primary"><div class="stat-label">总发帖量</div><div class="stat-value">47</div><div class="stat-sub">日均 42.3</div></div>
+    <div class="stat-card c-green"><div class="stat-label">成功率</div><div class="stat-value">80.9%</div><div class="stat-sub">目标 ≥85%</div></div>
+    <div class="stat-card c-purple"><div class="stat-label">平均流水线耗时</div><div class="stat-value">6.2min</div><div class="stat-sub">V1.0 人工基线 ~25min</div></div>
+    <div class="stat-card c-orange"><div class="stat-label">人工介入率</div><div class="stat-value">31%</div><div class="stat-sub">文案确认 + 封面确认</div></div>
+  </div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div style="flex:2;min-width:500px">
+      <div class="panel">
+        <div class="panel-title"><span class="dot dot-blue"></span>各平台发帖统计</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr><th style="padding:8px 10px;font-size:11px">平台</th><th style="padding:8px 10px;font-size:11px">今日发帖</th><th style="padding:8px 10px;font-size:11px">成功</th><th style="padding:8px 10px;font-size:11px">失败</th><th style="padding:8px 10px;font-size:11px">成功率</th><th style="padding:8px 10px;font-size:11px">平均耗时</th></tr></thead>
+          <tbody>
+            <tr><td class="t1">91视频web</td><td>12</td><td style="color:var(--green)">11</td><td style="color:var(--red)">1</td><td>91.7%</td><td>5.8min</td></tr>
+            <tr><td class="t1">海角社区</td><td>9</td><td style="color:var(--green)">8</td><td style="color:var(--red)">1</td><td>88.9%</td><td>6.1min</td></tr>
+            <tr><td class="t1">黑料情报局</td><td>7</td><td style="color:var(--green)">6</td><td style="color:var(--red)">1</td><td>85.7%</td><td>5.4min</td></tr>
+            <tr><td class="t1">91porn</td><td>6</td><td style="color:var(--green)">6</td><td style="color:var(--red)">0</td><td style="color:var(--green)">100%</td><td>4.2min</td></tr>
+            <tr><td class="t1">糖心</td><td>5</td><td style="color:var(--green)">4</td><td style="color:var(--red)">1</td><td>80.0%</td><td>7.0min</td></tr>
+            <tr><td class="t1">9色视频</td><td>4</td><td style="color:var(--green)">4</td><td style="color:var(--red)">0</td><td style="color:var(--green)">100%</td><td>5.5min</td></tr>
+            <tr><td style="color:var(--t3)">其他 29 个平台</td><td>0</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="flex:1;min-width:280px">
+      <div class="panel">
+        <div class="panel-title"><span class="dot dot-green"></span>各编辑发帖排名</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px"><span>🥇 张伟</span><span style="color:var(--primary);font-weight:700">18 篇</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px"><span>🥈 李梦</span><span style="color:var(--primary);font-weight:700">14 篇</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px"><span>🥉 王超</span><span style="color:var(--primary);font-weight:700">10 篇</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px"><span style="padding-left:24px">陈晓</span><span style="color:var(--t2)">5 篇</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><span class="dot dot-orange"></span>流水线各步骤耗时 <span style="font-size:10px;color:var(--red);font-weight:400;margin-left:4px">↑ 瓶颈</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:70px;color:var(--t3)">文案生成</span><div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="width:20%;height:100%;background:var(--primary);border-radius:4px"></div></div><span style="width:50px;text-align:right;color:var(--t2)">0.8min</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:70px;color:var(--t3)">图片重命名</span><div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="width:5%;height:100%;background:var(--green);border-radius:4px"></div></div><span style="width:50px;text-align:right;color:var(--t2)">0.1min</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:70px;color:var(--t3)">封面制作</span><div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="width:25%;height:100%;background:var(--orange);border-radius:4px"></div></div><span style="width:50px;text-align:right;color:var(--t2)">1.0min</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:70px;color:var(--t3)">水印处理</span><div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="width:50%;height:100%;background:var(--purple);border-radius:4px"></div></div><span style="width:50px;text-align:right;color:var(--t2)">2.1min</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:70px;color:var(--red);font-weight:600">上传发布</span><div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="width:55%;height:100%;background:var(--red);border-radius:4px"></div></div><span style="width:50px;text-align:right;color:var(--red);font-weight:600">2.2min</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: TOOLBOX — 保持不变
+     ════════════════════════════════════════ -->
+<div class="page" id="page-toolbox">
+  <div class="section-header"><div class="section-title">工具箱</div></div>
+  <p style="font-size:12px;color:var(--t2);margin-bottom:16px">以下工具可独立使用，不在自动流水线内。常用于素材预处理或特殊需求。</p>
+  <div style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">视频处理</div>
+  <div class="tool-grid" style="margin-bottom:24px">
+    <div class="tool-card"><div class="tc-icon">🔲</div><div class="tc-name">遮盖四角水印</div><div class="tc-desc">模糊遮盖视频四角水印区域</div></div>
+    <div class="tool-card"><div class="tc-icon">✂️</div><div class="tc-name">裁掉四角水印</div><div class="tc-desc">裁剪掉四角水印区域</div></div>
+    <div class="tool-card"><div class="tc-icon">🌫️</div><div class="tc-name">虚化填充</div><div class="tc-desc">模糊背景填充为标准尺寸</div></div>
+    <div class="tool-card"><div class="tc-icon">⏱️</div><div class="tc-name">片头片尾处理</div><div class="tc-desc">裁掉或添加片头片尾</div></div>
+    <div class="tool-card"><div class="tc-icon">🔗</div><div class="tc-name">视频合成</div><div class="tc-desc">多段视频排序合并</div></div>
+    <div class="tool-card"><div class="tc-icon">📐</div><div class="tc-name">视频压缩</div><div class="tc-desc">批量压缩到指定大小</div></div>
+  </div>
+  <div style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">图片处理</div>
+  <div class="tool-grid" style="margin-bottom:24px">
+    <div class="tool-card"><div class="tc-icon">🖼️</div><div class="tc-name">智能封面</div><div class="tc-desc">AI 从视频中选最佳帧做封面</div></div>
+    <div class="tool-card"><div class="tc-icon">🔄</div><div class="tc-name">图片格式转换</div><div class="tc-desc">WebP/PNG/JPG 批量转换</div></div>
+  </div>
+  <div style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">AI 工具</div>
+  <div class="tool-grid">
+    <div class="tool-card"><div class="tc-icon">🤖</div><div class="tc-name">独立文案生成</div><div class="tc-desc">脱离流水线单独生成文案</div></div>
+    <div class="tool-card"><div class="tc-icon">💬</div><div class="tc-name">评论审核</div><div class="tc-desc">AI 审核评论 + 智能回复</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: PLATFORMS (业务线管理 — 改进：分组筛选+配置卡片增强)
+     ════════════════════════════════════════ -->
+<div class="page" id="page-platforms">
+  <div class="section-header">
+    <div class="section-title">业务线管理 <span style="font-size:13px;color:var(--t3);font-weight:400">（35 个平台）</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="deptFilter" style="background:var(--bg3);border:1px solid var(--bd);color:var(--t1);padding:5px 10px;border-radius:6px;font-size:12px;font-family:inherit">
+        <option value="">全部部组</option>
+        <option value="1部">1部</option><option value="2部">2部</option><option value="3部">3部</option><option value="4部">4部</option><option value="5部">5部</option>
+      </select>
+      <button class="btn btn-primary" id="addPlatformBtn">＋ 新增业务线</button>
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--t2);margin-bottom:16px">每个业务线的水印、分类库、发布 API、排版模板等参数在此配置。发帖流水线会自动读取对应配置。</p>
+  <div class="config-grid" id="configGrid"></div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PAGE: ACCOUNTS — 改进：脱敏
+     ════════════════════════════════════════ -->
+<div class="page" id="page-accounts">
+  <div class="section-header"><div class="section-title">账号管理</div><button class="btn btn-primary">＋ 添加账号</button></div>
+  <p style="font-size:12px;color:var(--t2);margin-bottom:16px">各平台后台登录凭据管理，发布时自动使用对应账号。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>平台</th><th>入口 URL</th><th>用户名</th><th>登录状态</th><th>上次登录</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td class="t1">91视频web</td><td style="color:var(--t3)">https://91*****.xxx/api</td><td>adm***91</td><td><span class="badge badge-green">已登录</span></td><td>2026-04-09 09:00</td><td><button class="btn btn-ghost btn-sm">重新登录</button></td></tr>
+        <tr><td class="t1">海角社区</td><td style="color:var(--t3)">https://hai*****.xxx/api</td><td>edi***hj</td><td><span class="badge badge-green">已登录</span></td><td>2026-04-09 08:45</td><td><button class="btn btn-ghost btn-sm">重新登录</button></td></tr>
+        <tr><td class="t1">黑料情报局</td><td style="color:var(--t3)">https://hei*****.xxx/api</td><td>pub***hl</td><td><span class="badge badge-red">已过期</span> <span style="font-size:10px;color:var(--red)">⚠️ 发帖前需重新登录</span></td><td>2026-04-08 16:20</td><td><button class="btn btn-sm" style="color:var(--orange);border:1px solid var(--orange);background:transparent">重新登录</button></td></tr>
+        <tr><td class="t1">91porn</td><td style="color:var(--t3)">https://91p*****.xxx/api</td><td>upl***91p</td><td><span class="badge badge-green">已登录</span></td><td>2026-04-09 09:15</td><td><button class="btn btn-ghost btn-sm">重新登录</button></td></tr>
+        <tr><td class="t1">糖心</td><td style="color:var(--t3)">https://tan*****.xxx/api</td><td>tx_***or</td><td><span class="badge badge-green">已登录</span></td><td>2026-04-09 08:30</td><td><button class="btn btn-ghost btn-sm">重新登录</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+  </div><!-- /page-container -->
+</div><!-- /main -->
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL: 新增/编辑业务线 (改进：分类库tag+水印上传预览)
+     ══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="platformModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">新增业务线</div>
+      <button class="modal-close" id="closeModalBtn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>业务线名称 *</label><input type="text" placeholder="如：91视频web"></div>
+        <div class="form-group"><label>负责部门</label><input type="text" placeholder="如：运营一部"></div>
+      </div>
+
+      <!-- P0: 分类库 tag 输入 -->
+      <div style="font-size:13px;font-weight:600;color:var(--t2);margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd)">分类库</div>
+      <div class="form-group full">
+        <label>分类列表（留空表示该平台不需要分类）</label>
+        <div class="tag-container" id="modalCategoryTags">
+          <span class="tag-item">今日吃瓜 <span class="tag-remove">×</span></span>
+          <span class="tag-item">网红黑料 <span class="tag-remove">×</span></span>
+          <span class="tag-item">热门大瓜 <span class="tag-remove">×</span></span>
+          <span class="tag-item">学生校园 <span class="tag-remove">×</span></span>
+          <input type="text" class="tag-input" placeholder="输入分类名后回车添加…">
+        </div>
+        <div class="form-hint" style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span>共 4 个分类 · 回车添加，×删除</span>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px">📋 批量导入</button>
+        </div>
+      </div>
+
+      <!-- P0: 图片水印 — 上传+预览 -->
+      <div style="font-size:13px;font-weight:600;color:var(--t2);margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd)">图片水印配置</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label>水印文件 (PNG)</label>
+          <div class="upload-zone has-file" style="padding:10px;margin:0;display:flex;align-items:center;gap:10px;text-align:left;border-style:solid;border-color:var(--green)">
+            <div style="width:48px;height:48px;background:var(--bg4);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🖼</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;color:var(--t1);font-weight:500">91video_logo.png</div>
+              <div style="font-size:10px;color:var(--t3)">264×88px · 12.4 KB</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;flex-shrink:0">替换</button>
+          </div>
+          <div class="form-hint">PNG 透明底，建议宽度 200~400px</div>
+        </div>
+        <div class="form-group"><label>水印位置</label><select><option>右下角</option><option>左下角</option><option>右上角</option><option>左上角</option></select></div>
+        <div class="form-group"><label>水印宽度 (px)</label><input type="number" value="264"></div>
+      </div>
+
+      <!-- P0: 视频水印 — 上传+预览 -->
+      <div style="font-size:13px;font-weight:600;color:var(--t2);margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd)">视频水印配置</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label>水印文件 (.mov/.png)</label>
+          <div class="upload-zone" style="padding:14px;margin:0;min-height:auto;display:flex;align-items:center;justify-content:center;gap:8px">
+            <span style="font-size:18px">🎬</span>
+            <span class="upload-hint" style="font-size:12px">点击上传 或 拖入视频水印</span>
+          </div>
+          <div class="form-hint">MOV 透明通道 或 PNG 静态水印</div>
+        </div>
+        <div class="form-group"><label>水印模式</label><select><option>四角轮转</option><option>固定位置</option><option>双水印对角</option></select></div>
+        <div class="form-group"><label>缩放比例 (%)</label><input type="number" value="35"></div>
+      </div>
+
+      <div style="font-size:13px;font-weight:600;color:var(--t2);margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd)">发布配置</div>
+      <div class="form-row">
+        <div class="form-group"><label>API 入口</label><input type="text" placeholder="https://xxx.xxx/api.php"></div>
+        <div class="form-group"><label>项目代码</label><input type="text" placeholder="项目标识符"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group full"><label>排版模板</label><textarea rows="4" placeholder="正文&#10;图片1-3&#10;## 小标题&#10;正文&#10;视频" style="font-family:monospace;font-size:11px"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancelModalBtn">取消</button>
+      <button class="btn btn-primary" id="saveModalBtn">保存业务线</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     JAVASCRIPT (改进：事件委托+状态封装+交互逻辑)
+     ══════════════════════════════════════════════ -->
+<script>
+/* ═══ 业务线数据 (含分类库) ═══ */
+const PLATFORMS = [
+  {name:'男同网',       dept:'1部4组', badge:'badge-purple', categories:['同性','视频']},
+  {name:'91视频web',    dept:'1部4组', badge:'badge-primary', categories:['今日吃瓜','网红黑料','热门大瓜','学生校园']},
+  {name:'黑料情报局',   dept:'1部4组', badge:'badge-orange', categories:['今日吃瓜','黑料爆料','网红八卦']},
+  {name:'91短视频',     dept:'1部3组', badge:'badge-purple', categories:['热门','推荐']},
+  {name:'91porn',       dept:'1部3组', badge:'badge-red', categories:[]},
+  {name:'9色视频',      dept:'1部3组', badge:'badge-cyan', categories:['今日吃瓜','热门大瓜']},
+  {name:'YouTube',      dept:'1部3组', badge:'badge-red', categories:[]},
+  {name:'91av',         dept:'1部2组', badge:'badge-primary', categories:['推荐','热门']},
+  {name:'91暗网',       dept:'1部2组', badge:'badge-purple', categories:[]},
+  {name:'海角社区',     dept:'1部2组', badge:'badge-green', categories:['今日吃瓜','校园','网红黑料','热门大瓜']},
+  {name:'妻友',         dept:'1部2组', badge:'badge-pink', categories:['投稿','原创']},
+  {name:'色花堂',       dept:'2部1组', badge:'badge-red', categories:['原创','转载']},
+  {name:'TikTok成人版', dept:'2部1组', badge:'badge-orange', categories:[]},
+  {name:'91hub',        dept:'3部2组', badge:'badge-cyan', categories:['视频','图文']},
+  {name:'第一吃瓜网',   dept:'3部2组', badge:'badge-orange', categories:['吃瓜','黑料','校园']},
+  {name:'抖阴',         dept:'3部3组', badge:'badge-purple', categories:['推荐','热门']},
+  {name:'海角社区web-b',dept:'3部3组', badge:'badge-green', categories:['今日吃瓜','校园']},
+  {name:'草榴社区',     dept:'3部5组', badge:'badge-red', categories:['原创','转载','技术讨论']},
+  {name:'51成人破解',   dept:'4部1组', badge:'badge-pink', categories:[]},
+  {name:'91抖阴',       dept:'4部1组', badge:'badge-cyan', categories:['推荐']},
+  {name:'推特社区',     dept:'4部1组', badge:'badge-primary', categories:[]},
+  {name:'糖心',         dept:'4部1组', badge:'badge-pink', categories:['今日吃瓜','热门大瓜','网红黑料']},
+  {name:'51tkitok破解', dept:'4部2组', badge:'badge-cyan', categories:[]},
+  {name:'pornhub免费版',dept:'4部2组', badge:'badge-orange', categories:[]},
+  {name:'xivdeo免费版', dept:'4部2组', badge:'badge-red', categories:[]},
+  {name:'黄色仓库',     dept:'4部2组', badge:'badge-orange', categories:[]},
+  {name:'51看片',       dept:'4部2组', badge:'badge-primary', categories:[]},
+  {name:'51av',         dept:'4部2组', badge:'badge-purple', categories:[]},
+  {name:'尤物百科',     dept:'4部2组', badge:'badge-pink', categories:['推荐']},
+  {name:'小蓝视频网',   dept:'5部1组', badge:'badge-primary', categories:['热门','推荐']},
+  {name:'GossipLust',   dept:'5部2组', badge:'badge-pink', categories:['gossip','leaked']},
+  {name:'玩物社区',     dept:'5部2组', badge:'badge-purple', categories:['原创','投稿']},
+  {name:'黑料吃瓜网',   dept:'5部3组', badge:'badge-orange', categories:['吃瓜','黑料','网红']},
+  {name:'18黑料',       dept:'5部3组', badge:'badge-red', categories:['吃瓜','黑料']},
+  {name:'海角社区 web', dept:'5部4组', badge:'badge-green', categories:['今日吃瓜','校园','网红黑料']},
+];
+
+/* ═══ 任务状态封装 ═══ */
+const taskState = {
+  selectedPlatforms: new Set(),
+  currentStep: 0,
+  totalSteps: 6,
+  copyGenerated: false,
+  selectedCover: 'A',
+  sourceFiles: ['IMG_001.jpg','IMG_002.jpg','IMG_003.jpg','IMG_004.jpg','IMG_005.jpg','IMG_006.jpg','IMG_007.jpg','IMG_008.jpg'],
+};
+
+/* ═══ Toast ═══ */
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' toast-' + type : '');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* ═══ Login ═══ */
+document.getElementById('loginBtn').addEventListener('click', () => {
+  document.getElementById('loginOverlay').style.display = 'none';
+});
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  document.getElementById('loginOverlay').style.display = 'flex';
+});
+
+/* ═══ Page Nav (事件委托) ═══ */
+const PAGE_TITLES = {
+  dashboard:'工作台', pipeline:'发帖流水线', tasks:'任务看板',
+  analytics:'数据统计', toolbox:'工具箱', platforms:'业务线管理', accounts:'账号管理'
+};
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('page-' + id);
+  if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.dataset.page === id) n.classList.add('active');
+  });
+  document.getElementById('topbar-title').textContent = PAGE_TITLES[id] || id;
+}
+
+document.addEventListener('click', (e) => {
+  const navItem = e.target.closest('[data-page]');
+  if (navItem) { showPage(navItem.dataset.page); return; }
+  const expandToggle = e.target.closest('.expand-toggle');
+  if (expandToggle) {
+    const row = expandToggle.closest('tr');
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('task-expand')) next.classList.toggle('open');
+    return;
+  }
+});
+
+/* ═══ P0: 平台选择 — 分组渲染 + 搜索 + 全选本组 ═══ */
+function renderPlatformGrid(filter) {
+  const grid = document.getElementById('platformGrid');
+  const groups = {};
+  PLATFORMS.forEach((p, i) => {
+    if (filter && !p.name.toLowerCase().includes(filter.toLowerCase()) && !p.dept.includes(filter)) return;
+    const dept = p.dept.replace(/\d组$/, '');
+    if (!groups[p.dept]) groups[p.dept] = [];
+    groups[p.dept].push({ ...p, idx: i });
+  });
+  let html = '';
+  for (const [dept, platforms] of Object.entries(groups)) {
+    html += `<div class="dept-group" data-dept="${dept}">
+      <div class="dept-group-header">
+        <div class="dept-group-title">${dept} <span style="color:var(--t3);font-weight:400">(${platforms.length})</span></div>
+        <button class="dept-select-all" data-dept="${dept}">全选本组</button>
+      </div>
+      <div class="platform-grid">`;
+    platforms.forEach(p => {
+      const sel = taskState.selectedPlatforms.has(p.idx) ? 'selected' : '';
+      html += `<div class="platform-chip ${sel}" data-idx="${p.idx}">
+        <div class="pc-check">${sel ? '✓' : ''}</div>
+        <div class="pc-name">${p.name}</div>
+        <div class="pc-dept">${p.dept}</div>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+  grid.innerHTML = html || '<div style="padding:20px;color:var(--t3);text-align:center">未找到匹配平台</div>';
+  document.getElementById('selectedCount').textContent = taskState.selectedPlatforms.size;
+}
+
+document.getElementById('platformGrid').addEventListener('click', (e) => {
+  const chip = e.target.closest('.platform-chip');
+  const selectAll = e.target.closest('.dept-select-all');
+  if (chip) {
+    const idx = parseInt(chip.dataset.idx);
+    chip.classList.toggle('selected');
+    if (chip.classList.contains('selected')) { taskState.selectedPlatforms.add(idx); chip.querySelector('.pc-check').textContent = '✓'; }
+    else { taskState.selectedPlatforms.delete(idx); chip.querySelector('.pc-check').textContent = ''; }
+    document.getElementById('selectedCount').textContent = taskState.selectedPlatforms.size;
+  } else if (selectAll) {
+    const dept = selectAll.dataset.dept;
+    const chips = selectAll.closest('.dept-group').querySelectorAll('.platform-chip');
+    const allSelected = [...chips].every(c => c.classList.contains('selected'));
+    chips.forEach(c => {
+      const idx = parseInt(c.dataset.idx);
+      if (allSelected) { c.classList.remove('selected'); taskState.selectedPlatforms.delete(idx); c.querySelector('.pc-check').textContent = ''; }
+      else { c.classList.add('selected'); taskState.selectedPlatforms.add(idx); c.querySelector('.pc-check').textContent = '✓'; }
+    });
+    document.getElementById('selectedCount').textContent = taskState.selectedPlatforms.size;
+  }
+});
+
+document.getElementById('platformSearch').addEventListener('input', (e) => {
+  renderPlatformGrid(e.target.value);
+});
+
+/* ═══ P0: Step 2 分类动态加载 ═══ */
+function updateCategoryTags() {
+  const cats = new Set();
+  taskState.selectedPlatforms.forEach(idx => {
+    (PLATFORMS[idx].categories || []).forEach(c => cats.add(c));
+  });
+  const container = document.getElementById('categoryTags');
+  const input = container.querySelector('.tag-input');
+  container.querySelectorAll('.tag-item').forEach(t => t.remove());
+  if (cats.size === 0) {
+    document.getElementById('categoryHint').textContent = '（所选平台无分类库要求）';
+  } else {
+    document.getElementById('categoryHint').textContent = `（已从 ${taskState.selectedPlatforms.size} 个平台加载 ${cats.size} 个分类）`;
+    cats.forEach(c => {
+      const tag = document.createElement('span');
+      tag.className = 'tag-item';
+      tag.innerHTML = `${c} <span class="tag-remove">×</span>`;
+      container.insertBefore(tag, input);
+    });
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('tag-remove')) { e.target.parentElement.remove(); }
+});
+
+/* ═══ P1: AI 文案生成加载态 ═══ */
+document.getElementById('generateCopyBtn').addEventListener('click', () => {
+  document.getElementById('aiResultArea').style.display = 'none';
+  document.getElementById('aiLoadingArea').style.display = 'block';
+  document.getElementById('generateCopyBtn').disabled = true;
+  document.getElementById('generateCopyBtn').textContent = '⏳ 生成中...';
+  setTimeout(() => {
+    document.getElementById('ai-title').value = '极品女神私密视频意外流出！身材颜值双双在线，网友直呼太可惜了';
+    document.getElementById('ai-kw').value = '极品女神,私密视频,流出,身材颜值,网红,曝光,自拍写真,大尺度,反转,吃瓜';
+    document.getElementById('ai-body').value = '震惊！一位被粉丝称为"极品女神"的网红博主，其私密视频近日在网上疯传。视频中的她与平时社交平台上的清纯形象判若两人，大尺度内容让网友直呼"人设崩塌"。\n\n据知情人士透露，这些视频疑似被前男友报复性发布。女神本人目前已清空社交账号，疑似准备跑路。但网友们已经把证据全部截图保存。\n\n更讽刺的是，就在视频曝光前一天，她还在直播间教粉丝"如何做一个自律的女孩"。这波打脸来得实在太快，网友纷纷表示："这就是传说中的反转打脸风吧？"';
+    document.getElementById('aiResultArea').style.display = 'block';
+    document.getElementById('aiLoadingArea').style.display = 'none';
+    document.getElementById('confirmCopyBtn').disabled = false;
+    document.getElementById('regenerateCopyBtn').disabled = false;
+    document.getElementById('generateCopyBtn').disabled = false;
+    document.getElementById('generateCopyBtn').textContent = '🤖 AI 生成文案';
+    document.getElementById('rename-prefix-v2').value = '极品女神私密视频';
+    taskState.copyGenerated = true;
+    updateRenamePreview();
+    showToast('✅ 文案生成成功', 'success');
+  }, 2000);
+});
+
+document.getElementById('regenerateCopyBtn').addEventListener('click', () => {
+  document.getElementById('generateCopyBtn').click();
+});
+
+/* ═══ P1: Step 3 重命名预览实时联动 ═══ */
+function updateRenamePreview() {
+  const prefix = document.getElementById('rename-prefix-v2').value || '未命名';
+  const start = parseInt(document.getElementById('rename-start').value) || 1;
+  const sep = document.getElementById('rename-sep').value;
+  const preview = document.getElementById('renamePreview');
+  let html = '';
+  taskState.sourceFiles.forEach((f, i) => {
+    const num = String(start + i).padStart(2, '0');
+    const ext = f.split('.').pop();
+    html += `<div style="color:var(--t3)">${f}</div><div style="color:var(--green)">→ ${prefix}${sep}${num}.${ext}</div>`;
+  });
+  preview.innerHTML = html;
+}
+
+['rename-prefix-v2', 'rename-start'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateRenamePreview);
+});
+document.getElementById('rename-sep').addEventListener('change', updateRenamePreview);
+
+/* ═══ P1: Step 4 封面选中交互 ═══ */
+document.getElementById('coverGrid').addEventListener('click', (e) => {
+  const option = e.target.closest('.cover-option');
+  if (!option) return;
+  document.querySelectorAll('.cover-option').forEach(o => {
+    o.style.borderColor = 'var(--bd)';
+    o.querySelector('.cover-check').style.display = 'none';
+    o.classList.remove('selected');
+  });
+  option.style.borderColor = 'var(--primary)';
+  option.querySelector('.cover-check').style.display = 'block';
+  option.classList.add('selected');
+  taskState.selectedCover = option.dataset.cover;
+});
+
+/* ═══ P1: Step 5 水印处理进度 ═══ */
+document.getElementById('startWatermarkBtn').addEventListener('click', () => {
+  document.getElementById('wmConfirmView').style.display = 'none';
+  document.getElementById('wmProcessView').style.display = 'block';
+  const platforms = ['91视频web','海角社区','黑料情报局','91porn','糖心'];
+  const container = document.getElementById('wmProgressCards');
+  container.innerHTML = platforms.map((p, i) => `
+    <div class="wm-card" id="wmCard${i}" style="border-color:var(--bd)">
+      <div class="wm-card-head"><span class="wm-card-platform">${p}</span><span class="badge badge-plain" style="font-size:10px" id="wmStatus${i}">等待中</span></div>
+      <div class="progress-bar" style="height:6px;margin-top:6px"><div class="progress-fill" style="width:0%;background:var(--primary)" id="wmProgress${i}"></div></div>
+      <div style="font-size:11px;color:var(--t3);margin-top:4px" id="wmText${i}">排队中…</div>
+    </div>
+  `).join('');
+  // 模拟逐个处理
+  let done = 0;
+  platforms.forEach((p, i) => {
+    setTimeout(() => {
+      const card = document.getElementById('wmCard' + i);
+      const progress = document.getElementById('wmProgress' + i);
+      const status = document.getElementById('wmStatus' + i);
+      const text = document.getElementById('wmText' + i);
+      card.style.borderColor = 'var(--primary)';
+      status.className = 'badge badge-primary'; status.style.fontSize = '10px';
+      status.textContent = '处理中';
+      text.textContent = '正在添加水印…';
+      let pct = 0;
+      const interval = setInterval(() => {
+        pct += Math.random() * 25 + 10;
+        if (pct >= 100) {
+          pct = 100; clearInterval(interval);
+          card.style.borderColor = 'var(--green)';
+          status.className = 'badge badge-green'; status.style.fontSize = '10px';
+          status.textContent = '✅ 完成';
+          text.textContent = '图片 ×8 + 视频 ×2 水印已添加';
+          done++;
+          if (done === platforms.length) {
+            showToast('✅ 全部平台水印处理完成！自动进入下一步', 'success');
+            setTimeout(() => wizardGoto(5), 1000);
+          }
+        }
+        progress.style.width = pct + '%';
+      }, 400);
+    }, i * 1200);
+  });
+});
+
+/* ═══ Wizard navigation (带校验) ═══ */
+function wizardGoto(step) {
+  taskState.currentStep = step;
+  document.querySelectorAll('.step-panel').forEach((p, i) => p.classList.toggle('active', i === step));
+  document.querySelectorAll('.wstep').forEach((s, i) => {
+    s.classList.remove('active', 'done');
+    if (i < step) s.classList.add('done');
+    else if (i === step) s.classList.add('active');
+  });
+  document.getElementById('prevBtn').disabled = step === 0;
+  document.getElementById('nextBtn').style.display = step >= taskState.totalSteps - 1 ? 'none' : '';
+  document.getElementById('stepHint').textContent = `第 ${step + 1} 步 / 共 ${taskState.totalSteps} 步`;
+  // Step 2 进入时更新分类
+  if (step === 1) updateCategoryTags();
+  // Step 3 进入时更新预览
+  if (step === 2) updateRenamePreview();
+}
+
+function validateStep(step) {
+  if (step === 0) {
+    if (taskState.selectedPlatforms.size === 0) { showToast('⚠️ 请至少选择一个发布平台', 'error'); return false; }
+    if (!document.getElementById('folderPath').value.trim()) { showToast('⚠️ 请输入素材文件夹路径', 'error'); return false; }
+  }
+  if (step === 1) {
+    if (!document.getElementById('ai-title').value.trim()) { showToast('⚠️ 请先生成或填写文案标题', 'error'); return false; }
+  }
+  return true;
+}
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+  if (!validateStep(taskState.currentStep)) return;
+  if (taskState.currentStep < taskState.totalSteps - 1) wizardGoto(taskState.currentStep + 1);
+});
+
+document.getElementById('prevBtn').addEventListener('click', () => {
+  if (taskState.currentStep > 0) wizardGoto(taskState.currentStep - 1);
+});
+
+document.getElementById('confirmCopyBtn').addEventListener('click', () => {
+  if (!validateStep(1)) return;
+  wizardGoto(2);
+});
+
+document.getElementById('confirmRenameBtn').addEventListener('click', () => wizardGoto(3));
+document.getElementById('confirmCoverBtn').addEventListener('click', () => wizardGoto(4));
+
+/* ═══ P2: 任务看板筛选 ═══ */
+document.querySelectorAll('[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+    document.querySelectorAll('.task-row').forEach(row => {
+      if (filter === 'all' || row.dataset.status === filter) row.style.display = '';
+      else row.style.display = 'none';
+    });
+    // 隐藏展开行
+    document.querySelectorAll('.task-expand').forEach(e => e.classList.remove('open'));
+  });
+});
+
+document.getElementById('taskSearch').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('.task-row').forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(q) ? '' : 'none';
+  });
+});
+
+/* ═══ P2: 配置卡片 — 含分类标签+水印状态 ═══ */
+function renderConfigGrid(deptFilter) {
+  const grid = document.getElementById('configGrid');
+  const filtered = deptFilter ? PLATFORMS.filter(p => p.dept.startsWith(deptFilter)) : PLATFORMS;
+  grid.innerHTML = filtered.map(p => {
+    const hasCats = p.categories && p.categories.length > 0;
+    const catsHtml = hasCats ? `<div class="config-tags">${p.categories.map(c => `<span class="mini-tag">${c}</span>`).join('')}</div>` : '<div style="font-size:10px;color:var(--t3);margin-top:4px">无分类库</div>';
+    return `<div class="config-card">
+      <div class="config-card-head">
+        <div class="config-card-title">${p.name}</div>
+        <span class="badge ${p.badge}" style="font-size:10px;padding:1px 8px">${p.dept}</span>
+      </div>
+      <div class="config-param"><span class="config-param-key">图片水印</span><span class="config-param-val">${p.name.toLowerCase().replace(/\s/g,'')}_logo.png</span></div>
+      <div class="config-param"><span class="config-param-key">视频水印</span><span class="config-param-val">${p.name.toLowerCase().replace(/\s/g,'')}.mov</span></div>
+      <div class="config-param"><span class="config-param-key">水印模式</span><span class="config-param-val">四角轮转</span></div>
+      <div class="config-param"><span class="config-param-key">分类库</span><span class="config-param-val">${hasCats ? p.categories.length + ' 个' : '无'}</span></div>
+      ${catsHtml}
+      <div style="margin-top:10px;display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm open-modal-btn">编辑</button>
+        <button class="btn btn-sm" style="color:var(--red);border:1px solid var(--red);background:transparent;padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('deptFilter').addEventListener('change', (e) => renderConfigGrid(e.target.value));
+
+/* ═══ Modal ═══ */
+document.getElementById('addPlatformBtn').addEventListener('click', () => document.getElementById('platformModal').classList.add('open'));
+document.getElementById('closeModalBtn').addEventListener('click', () => document.getElementById('platformModal').classList.remove('open'));
+document.getElementById('cancelModalBtn').addEventListener('click', () => document.getElementById('platformModal').classList.remove('open'));
+document.getElementById('saveModalBtn').addEventListener('click', () => { document.getElementById('platformModal').classList.remove('open'); showToast('✅ 业务线已保存', 'success'); });
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('open-modal-btn')) document.getElementById('platformModal').classList.add('open');
+});
+
+/* ═══ P2: 通知中心 (简单弹窗) ═══ */
+document.getElementById('notifBell').addEventListener('click', () => {
+  showToast('📬 3 条新通知：#0052 封面待确认 / #0049 需处理 / #0048 发布失败', '');
+});
+
+/* ═══ Tag input 交互 ═══ */
+document.querySelectorAll('.tag-container').forEach(container => {
+  const input = container.querySelector('.tag-input');
+  if (!input) return;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && input.value.trim()) {
+      e.preventDefault();
+      const tag = document.createElement('span');
+      tag.className = 'tag-item';
+      tag.innerHTML = `${input.value.trim()} <span class="tag-remove">×</span>`;
+      container.insertBefore(tag, input);
+      input.value = '';
+    }
+  });
+  container.addEventListener('click', () => input.focus());
+});
+
+/* ═══ 键盘快捷键 ═══ */
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'Escape') {
+    document.getElementById('platformModal').classList.remove('open');
+    return;
+  }
+  if (e.ctrlKey && e.key === 'n') { e.preventDefault(); showPage('pipeline'); return; }
+  const pageKeys = { '1': 'dashboard', '2': 'pipeline', '3': 'tasks', '4': 'analytics', '5': 'toolbox', '6': 'platforms', '7': 'accounts' };
+  if (pageKeys[e.key]) showPage(pageKeys[e.key]);
+});
+
+/* ═══ Init ═══ */
+renderPlatformGrid();
+renderConfigGrid();
+updateRenamePreview();
+</script>
+</body>
+</html>

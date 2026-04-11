@@ -1,0 +1,45 @@
+{
+  "_说明": "OmniPublish V2.0 全局配置 — 复制为 config.json 后填入你的实际信息",
+
+  "api_base": "",
+  "api_key": "",
+  "cw_model": "gpt-4o",
+
+  "crypto": {
+    "_说明": "平台 API 加密密钥（原从代码硬编码迁移至此）",
+    "appkey": "",
+    "aes_key": "",
+    "aes_iv": "",
+    "media_key": "",
+    "media_iv": "",
+    "bundle_id": "com.pc.jyaw"
+  },
+
+  "server": {
+    "port": 9527,
+    "auth_token": "",
+    "allowed_origins": ["http://127.0.0.1:9527"]
+  },
+
+  "yolo": {
+    "face_model": "yolov8n-face.pt",
+    "general_model": "yolov8n.pt"
+  },
+
+  "defaults": {
+    "img_width": 800,
+    "wm_width": 264,
+    "wm_position": "bottom-right",
+    "wm_opacity": 100,
+    "cover_layout": "triple",
+    "cover_candidates": 3,
+    "video_codec": "auto",
+    "video_bitrate": "2M",
+    "video_fps": 30
+  },
+
+  "rate_limit": {
+    "_说明": "API 请求限速（秒），防止触发平台封号",
+    "min_interval": 1.0
+  }
+}
