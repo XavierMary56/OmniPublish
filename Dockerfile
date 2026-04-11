@@ -10,12 +10,20 @@ RUN npx vite build
 # ═══ Stage 2: Python 后端 ═══
 FROM python:3.11-slim
 
+# 设置 UTF-8 locale（修复中文文件名）
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PYTHONIOENCODING=utf-8
+
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
+    locales \
+    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
+    && locale-gen \
     && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
 WORKDIR /app
 

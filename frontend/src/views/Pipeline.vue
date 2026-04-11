@@ -178,6 +178,8 @@ watch(() => store.copyResult, (r) => {
   }
 })
 
+const hasDraft = ref(false)
+
 onMounted(async () => {
   // 加载平台列表
   try { platforms.value = await api('GET', '/platforms') } catch {}
@@ -194,9 +196,32 @@ onMounted(async () => {
     prefix.value = store.renamePrefix
     folder.value = store.folderPath
   } else {
-    store.reset()
+    // 尝试恢复草稿
+    if (store.loadDraft()) {
+      hasDraft.value = true
+      if (store.copyResult) {
+        editTitle.value = store.copyResult.title
+        editKeywords.value = store.copyResult.keywords
+        editBody.value = store.copyResult.body
+      }
+      prefix.value = store.renamePrefix
+      folder.value = store.folderPath
+    } else {
+      store.reset()
+    }
   }
 })
+
+function handleSaveDraft() {
+  store.saveDraft()
+  alert('草稿已保存')
+}
+
+function handleDiscardDraft() {
+  store.clearDraft()
+  store.reset()
+  hasDraft.value = false
+}
 </script>
 
 <template>
@@ -205,7 +230,15 @@ onMounted(async () => {
       <!-- Header -->
       <div style="padding:20px 24px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">
         <h3 style="font-size:16px;font-weight:700">{{ store.taskNo || '新建发帖任务' }}</h3>
-        <span class="badge badge-primary">流水线模式</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="badge badge-primary">流水线模式</span>
+          <button class="btn btn-ghost btn-sm" @click="handleSaveDraft">💾 保存草稿</button>
+        </div>
+      </div>
+      <!-- 草稿恢复提示 -->
+      <div v-if="hasDraft && !store.taskId" style="padding:10px 24px;background:rgba(255,183,77,.08);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:12px;color:var(--orange)">📋 已恢复上次未完成的草稿</span>
+        <button class="btn btn-sm" style="color:var(--red);font-size:11px" @click="handleDiscardDraft">丢弃草稿</button>
       </div>
 
       <!-- Step indicators -->

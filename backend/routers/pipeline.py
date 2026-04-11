@@ -52,7 +52,12 @@ async def upload_files(
     total_size = 0
     for f in files:
         # 安全处理文件名（保留原名，去掉路径分隔符）
-        safe_name = os.path.basename(f.filename or "unknown")
+        raw_name = f.filename or "unknown"
+        # 修复中文文件名编码问题
+        safe_name = _fix_filename_encoding(raw_name)
+        safe_name = os.path.basename(safe_name)
+        # 过滤危险字符
+        safe_name = safe_name.replace('..', '_').replace('/', '_').replace('\\', '_')
         dest_path = os.path.join(folder_path, safe_name)
 
         # 写入文件
@@ -71,6 +76,155 @@ async def upload_files(
         "total_files": len(saved_files),
         "total_size_mb": round(total_size / 1024 / 1024, 2),
         "file_manifest": manifest,
+    })
+
+
+# ══════════════════════════════════════════
+# 分片断点续传
+# ══════════════════════════════════════════
+
+@router.post("/upload/init")
+async def init_chunked_upload(
+    filename: str,
+    total_size: int,
+    total_chunks: int,
+    folder_id: str = "",
+    user: UserInfo = Depends(get_current_user),
+):
+    """初始化分片上传：返回 upload_id 和 folder_id。"""
+    if not folder_id:
+        folder_id = uuid.uuid4().hex[:12]
+    folder_path = os.path.join(UPLOAD_ROOT, folder_id)
+    os.makedirs(folder_path, exist_ok=True)
+
+    # 修复中文文件名
+    try:
+        filename = filename.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+
+    upload_id = uuid.uuid4().hex[:16]
+    chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
+    os.makedirs(chunks_dir, exist_ok=True)
+
+    # 记录上传元数据
+    meta = {
+        "upload_id": upload_id,
+        "folder_id": folder_id,
+        "folder_path": folder_path,
+        "filename": filename,
+        "total_size": total_size,
+        "total_chunks": total_chunks,
+        "uploaded_chunks": [],
+    }
+    with open(os.path.join(chunks_dir, "_meta.json"), "w", encoding="utf-8") as fp:
+        json.dump(meta, fp, ensure_ascii=False)
+
+    return ApiResponse.success(data={
+        "upload_id": upload_id,
+        "folder_id": folder_id,
+        "uploaded_chunks": [],
+    })
+
+
+@router.post("/upload/chunk")
+async def upload_chunk(
+    upload_id: str,
+    chunk_index: int,
+    chunk: UploadFile = File(...),
+    user: UserInfo = Depends(get_current_user),
+):
+    """上传单个分片。"""
+    chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
+    meta_path = os.path.join(chunks_dir, "_meta.json")
+    if not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail=f"上传会话不存在: {upload_id}")
+
+    # 保存分片
+    chunk_path = os.path.join(chunks_dir, f"chunk_{chunk_index:05d}")
+    content = await chunk.read()
+    with open(chunk_path, "wb") as fp:
+        fp.write(content)
+
+    # 更新元数据
+    with open(meta_path, "r", encoding="utf-8") as fp:
+        meta = json.load(fp)
+    if chunk_index not in meta["uploaded_chunks"]:
+        meta["uploaded_chunks"].append(chunk_index)
+        meta["uploaded_chunks"].sort()
+    with open(meta_path, "w", encoding="utf-8") as fp:
+        json.dump(meta, fp, ensure_ascii=False)
+
+    return ApiResponse.success(data={
+        "chunk_index": chunk_index,
+        "uploaded": len(meta["uploaded_chunks"]),
+        "total": meta["total_chunks"],
+    })
+
+
+@router.post("/upload/complete")
+async def complete_chunked_upload(
+    upload_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """合并分片，完成上传。"""
+    chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
+    meta_path = os.path.join(chunks_dir, "_meta.json")
+    if not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail=f"上传会话不存在: {upload_id}")
+
+    with open(meta_path, "r", encoding="utf-8") as fp:
+        meta = json.load(fp)
+
+    # 检查是否所有分片都已上传
+    if len(meta["uploaded_chunks"]) < meta["total_chunks"]:
+        missing = [i for i in range(meta["total_chunks"]) if i not in meta["uploaded_chunks"]]
+        raise HTTPException(status_code=400, detail=f"缺少分片: {missing[:10]}")
+
+    # 合并分片到目标文件
+    safe_name = os.path.basename(meta["filename"])
+    dest_path = os.path.join(meta["folder_path"], safe_name)
+    with open(dest_path, "wb") as out_fp:
+        for i in range(meta["total_chunks"]):
+            chunk_path = os.path.join(chunks_dir, f"chunk_{i:05d}")
+            with open(chunk_path, "rb") as cp:
+                out_fp.write(cp.read())
+
+    # 清理分片目录
+    shutil.rmtree(chunks_dir, ignore_errors=True)
+
+    # 扫描文件夹
+    manifest = _scan_folder(meta["folder_path"])
+
+    return ApiResponse.success(data={
+        "folder_path": meta["folder_path"],
+        "folder_id": meta["folder_id"],
+        "filename": safe_name,
+        "file_manifest": manifest,
+    })
+
+
+@router.get("/upload/status/{upload_id}")
+async def get_upload_status(
+    upload_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """查询分片上传进度（断点续传时恢复已上传的分片列表）。"""
+    chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
+    meta_path = os.path.join(chunks_dir, "_meta.json")
+    if not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail="上传会话不存在")
+
+    with open(meta_path, "r", encoding="utf-8") as fp:
+        meta = json.load(fp)
+
+    return ApiResponse.success(data={
+        "upload_id": upload_id,
+        "folder_id": meta["folder_id"],
+        "filename": meta["filename"],
+        "total_chunks": meta["total_chunks"],
+        "uploaded_chunks": meta["uploaded_chunks"],
+        "progress": round(len(meta["uploaded_chunks"]) / meta["total_chunks"] * 100, 1) if meta["total_chunks"] > 0 else 0,
     })
 
 
@@ -386,11 +540,57 @@ async def cancel_task(task_id: int, user: UserInfo = Depends(get_current_user)):
 
 # ── 工具函数 ──
 
+def _fix_filename_encoding(name: str) -> str:
+    """修复 multipart 上传中的中文文件名编码。
+    浏览器可能以多种方式传输中文文件名：
+    1. 直接 UTF-8（现代浏览器，filename*=utf-8''xxx）
+    2. Latin-1 编码的 UTF-8 字节（旧的 filename="xxx" 头）
+    3. RFC 5987 格式
+    """
+    if not name:
+        return "unknown"
+    # 如果已经是合法的中文/ASCII，直接返回
+    try:
+        name.encode('ascii')
+        return name  # 纯 ASCII
+    except UnicodeEncodeError:
+        pass
+    # 检查是否已经是正确的 UTF-8 中文
+    for ch in name:
+        if '\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf':
+            return name  # 已经是正确中文
+    # 获取原始字节（Latin-1 是 1:1 字节映射）
+    try:
+        raw_bytes = name.encode('latin-1')
+    except UnicodeEncodeError:
+        return name
+    # 优先尝试 UTF-8
+    try:
+        return raw_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+    # Windows 中文系统：尝试 GBK / GB18030
+    try:
+        return raw_bytes.decode('gbk')
+    except UnicodeDecodeError:
+        pass
+    try:
+        return raw_bytes.decode('gb18030')
+    except UnicodeDecodeError:
+        pass
+    # cp1252（西欧）
+    try:
+        return raw_bytes.decode('cp1252')
+    except UnicodeDecodeError:
+        pass
+    return name
+
+
 def _scan_folder(folder_path: str) -> dict:
     """扫描文件夹，返回文件清单。"""
     img_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
     vid_exts = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv", ".webm"}
-    txt_exts = {".txt"}
+    txt_exts = {".txt", ".doc", ".docx"}
     manifest = {"images": [], "videos": [], "txts": []}
     if not os.path.isdir(folder_path):
         return manifest

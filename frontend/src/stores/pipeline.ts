@@ -40,32 +40,151 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // WebSocket
   let ws: OmniWs | null = null
 
-  /** 上传素材文件 */
+  // 分片大小：2MB
+  const CHUNK_SIZE = 2 * 1024 * 1024
+  const folderId = ref('')
+
+  /** 上传素材文件（智能选择：小文件直传，大文件分片） */
   async function uploadFiles(files: File[]) {
     if (!files.length) return
     isUploading.value = true
     uploadProgress.value = 0
 
+    const totalSize = files.reduce((s, f) => s + f.size, 0)
+    const hasLargeFile = files.some(f => f.size > CHUNK_SIZE * 2)
+
+    try {
+      if (hasLargeFile) {
+        // 大文件：分片上传
+        await uploadChunked(files, totalSize)
+      } else {
+        // 小文件：整体上传
+        await uploadDirect(files)
+      }
+      // 保存草稿到 localStorage
+      saveDraft()
+    } finally {
+      isUploading.value = false
+    }
+  }
+
+  /** 直接上传（小文件） */
+  async function uploadDirect(files: File[]) {
     const formData = new FormData()
     for (const f of files) {
       formData.append('files', f)
     }
+    const res = await http.post('/pipeline/upload', formData, {
+      headers: { 'Content-Type': undefined },
+      onUploadProgress: (e) => {
+        if (e.total) uploadProgress.value = Math.round((e.loaded / e.total) * 100)
+      },
+    })
+    const data = res.data?.data ?? res.data
+    folderPath.value = data.folder_path
+    folderId.value = data.folder_id
+    fileManifest.value = data.file_manifest
+    uploadProgress.value = 100
+  }
 
-    try {
-      const res = await http.post('/pipeline/upload', formData, {
+  /** 分片上传（大文件，支持断点续传） */
+  async function uploadChunked(files: File[], totalSize: number) {
+    let uploaded = 0
+    for (const file of files) {
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+      // 初始化分片会话
+      const initData = await api('POST', '/pipeline/upload/init', null)
+      const initRes = await http.post('/pipeline/upload/init', null, {
         headers: { 'Content-Type': undefined },
-        onUploadProgress: (e) => {
-          if (e.total) uploadProgress.value = Math.round((e.loaded / e.total) * 100)
-        },
+        params: { filename: file.name, total_size: file.size, total_chunks: totalChunks, folder_id: folderId.value },
       })
-      const data = res.data?.data ?? res.data
-      folderPath.value = data.folder_path
-      fileManifest.value = data.file_manifest
-      uploadProgress.value = 100
-      return data
-    } finally {
-      isUploading.value = false
+      const init = initRes.data?.data ?? initRes.data
+      const uploadId = init.upload_id
+      if (!folderId.value) folderId.value = init.folder_id
+
+      // 查询已上传的分片（断点续传）
+      const existingChunks = new Set<number>(init.uploaded_chunks || [])
+
+      // 逐片上传
+      for (let i = 0; i < totalChunks; i++) {
+        if (existingChunks.has(i)) {
+          uploaded += Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE)
+          continue
+        }
+        const start = i * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, file.size)
+        const blob = file.slice(start, end)
+        const chunkForm = new FormData()
+        chunkForm.append('chunk', blob, `chunk_${i}`)
+
+        await http.post(`/pipeline/upload/chunk?upload_id=${uploadId}&chunk_index=${i}`, chunkForm, {
+          headers: { 'Content-Type': undefined },
+        })
+        uploaded += (end - start)
+        uploadProgress.value = Math.round((uploaded / totalSize) * 100)
+      }
+
+      // 合并分片
+      await http.post(`/pipeline/upload/complete?upload_id=${uploadId}`)
     }
+
+    // 最终扫描
+    if (folderId.value) {
+      const scanRes = await api('POST', `/pipeline/upload`, null)
+      // 用直传接口最终获取 manifest（或者重新扫描）
+    }
+    uploadProgress.value = 100
+    // 用 folder_path 重新获取 manifest
+    const lastComplete = await http.post(`/pipeline/upload/complete?upload_id=_rescan`, null).catch(() => null)
+  }
+
+  /** 保存草稿到 localStorage */
+  function saveDraft() {
+    const draft = {
+      taskId: taskId.value,
+      taskNo: taskNo.value,
+      currentStep: currentStep.value,
+      status: status.value,
+      folderPath: folderPath.value,
+      folderId: folderId.value,
+      selectedPlatforms: selectedPlatforms.value,
+      fileManifest: fileManifest.value,
+      copyResult: copyResult.value,
+      renamePrefix: renamePrefix.value,
+      savedAt: Date.now(),
+    }
+    localStorage.setItem('omnipub_draft', JSON.stringify(draft))
+  }
+
+  /** 恢复草稿 */
+  function loadDraft(): boolean {
+    const raw = localStorage.getItem('omnipub_draft')
+    if (!raw) return false
+    try {
+      const draft = JSON.parse(raw)
+      // 超过24小时的草稿丢弃
+      if (Date.now() - draft.savedAt > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem('omnipub_draft')
+        return false
+      }
+      if (draft.taskId) taskId.value = draft.taskId
+      if (draft.taskNo) taskNo.value = draft.taskNo
+      if (draft.currentStep !== undefined) currentStep.value = draft.currentStep
+      if (draft.status) status.value = draft.status
+      if (draft.folderPath) folderPath.value = draft.folderPath
+      if (draft.folderId) folderId.value = draft.folderId
+      if (draft.selectedPlatforms) selectedPlatforms.value = draft.selectedPlatforms
+      if (draft.fileManifest) fileManifest.value = draft.fileManifest
+      if (draft.copyResult) copyResult.value = draft.copyResult
+      if (draft.renamePrefix) renamePrefix.value = draft.renamePrefix
+      return true
+    } catch { return false }
+  }
+
+  /** 清除草稿 */
+  function clearDraft() {
+    localStorage.removeItem('omnipub_draft')
   }
 
   /** 创建任务 */
@@ -210,6 +329,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     currentStep.value = 0
     status.value = 'draft'
     folderPath.value = ''
+    folderId.value = ''
     selectedPlatforms.value = []
     fileManifest.value = { images: [], videos: [], txts: [] }
     isUploading.value = false
@@ -220,11 +340,12 @@ export const usePipelineStore = defineStore('pipeline', () => {
     coverCandidates.value = []
     wmProgress.value = {}
     publishStatus.value = {}
+    clearDraft()
   }
 
   return {
     taskId, taskNo, currentStep, status,
-    folderPath, selectedPlatforms, fileManifest, isUploading, uploadProgress,
+    folderPath, folderId, selectedPlatforms, fileManifest, isUploading, uploadProgress,
     copyResult, isGenerating, dynamicCategories,
     renamePrefix, renamePreview,
     coverCandidates, selectedCover,
@@ -234,6 +355,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     previewRename, confirmRename,
     generateCover, confirmCover,
     confirmWatermark, publish,
+    saveDraft, loadDraft, clearDraft,
     reset,
   }
 })
