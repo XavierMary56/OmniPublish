@@ -24,12 +24,35 @@ from routers import auth, pipeline, tasks, platforms, stats, tools
 # ── 生命周期 ──
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时初始化数据库。"""
+    """启动时初始化数据库，启动定时清理任务。"""
     await init_db()
     print(f"[OmniPublish] Server ready on port {settings.server.port}")
     print(f"[OmniPublish] API docs: http://127.0.0.1:{settings.server.port}/docs")
+
+    # 启动每日日志清理定时任务
+    cleanup_task = asyncio.create_task(_daily_cleanup())
     yield
+    cleanup_task.cancel()
     print("[OmniPublish] Shutting down...")
+
+
+async def _daily_cleanup():
+    """每天凌晨 3 点清理过期日志。"""
+    from database import cleanup_old_logs, get_db
+    while True:
+        try:
+            await asyncio.sleep(24 * 3600)  # 每 24 小时执行一次
+            db = await get_db()
+            try:
+                deleted = await cleanup_old_logs(db, days=30)
+                if deleted > 0:
+                    print(f"[Cleanup] Deleted {deleted} old log entries")
+            finally:
+                await db.close()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Cleanup] Error: {e}")
 
 
 # ── FastAPI 实例 ──

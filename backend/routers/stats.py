@@ -182,3 +182,38 @@ def _user_filter(user: UserInfo) -> tuple:
     elif user.role == UserRole.LEADER:
         return "", []  # 组长看全部（简化，后续可加部门过滤）
     return "", []  # 管理员看全部
+
+
+# ══════════════════════════════════════
+# 数据库管理（仅管理员）
+# ══════════════════════════════════════
+
+@router.get("/db-stats")
+async def db_stats(user: UserInfo = Depends(get_current_user)):
+    """数据库统计信息（管理员可查看）。"""
+    if user.role != UserRole.ADMIN:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="仅管理员可查看")
+
+    from database import get_db_stats
+    stats = await get_db_stats()
+    return ApiResponse.success(data=stats)
+
+
+@router.post("/db-cleanup")
+async def db_cleanup(
+    days: int = Query(30, description="保留最近 N 天的日志"),
+    user: UserInfo = Depends(get_current_user),
+):
+    """手动清理过期日志（管理员操作）。"""
+    if user.role != UserRole.ADMIN:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    from database import cleanup_old_logs
+    db = await get_db()
+    try:
+        deleted = await cleanup_old_logs(db, days)
+        return ApiResponse.success(data={"deleted": deleted, "days_kept": days})
+    finally:
+        await db.close()
