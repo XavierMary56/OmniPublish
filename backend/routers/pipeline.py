@@ -14,7 +14,7 @@ from models.task import (
 from models.common import ApiResponse
 from models.user import UserInfo
 from middleware.auth import get_current_user
-from database import get_db, get_next_task_no
+from database import get_pool, get_next_task_no
 from services.pipeline_service import pipeline_service
 from services.copywrite_service import copywrite_service
 from services.rename_service import rename_service
@@ -244,38 +244,35 @@ async def create_task(req: CreateTaskRequest, user: UserInfo = Depends(get_curre
 
     task_no = await get_next_task_no()
 
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            """INSERT INTO tasks (task_no, folder_path, created_by, target_platforms, file_manifest, status, current_step)
-               VALUES (?, ?, ?, ?, ?, 'running', 1)""",
-            (task_no, req.folder_path, user.id,
-             json.dumps(req.target_platforms), json.dumps(manifest)),
-        )
-        task_id = cursor.lastrowid
-
-        for step in range(6):
-            status = "done" if step == 0 else ("awaiting_confirm" if step == 1 else "pending")
-            await db.execute(
-                "INSERT INTO task_steps (task_id, step, status) VALUES (?, ?, ?)",
-                (task_id, step, status),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            task_id = await conn.fetchval(
+                """INSERT INTO tasks (task_no, folder_path, created_by, target_platforms, file_manifest, status, current_step)
+                   VALUES ($1, $2, $3, $4, $5, 'running', 1) RETURNING id""",
+                task_no, req.folder_path, user.id,
+                json.dumps(req.target_platforms), json.dumps(manifest),
             )
-        for pid in req.target_platforms:
-            await db.execute(
-                "INSERT INTO platform_tasks (task_id, platform_id) VALUES (?, ?)",
-                (task_id, pid),
-            )
-        await db.commit()
 
-        await pipeline_service.add_log(task_id, f"任务创建: {len(req.target_platforms)} 个平台", step=0)
+            for step in range(6):
+                status = "done" if step == 0 else ("awaiting_confirm" if step == 1 else "pending")
+                await conn.execute(
+                    "INSERT INTO task_steps (task_id, step, status) VALUES ($1, $2, $3)",
+                    task_id, step, status,
+                )
+            for pid in req.target_platforms:
+                await conn.execute(
+                    "INSERT INTO platform_tasks (task_id, platform_id) VALUES ($1, $2)",
+                    task_id, pid,
+                )
 
-        return ApiResponse.success(data={
-            "task_id": task_id,
-            "task_no": task_no,
-            "file_manifest": manifest,
-        })
-    finally:
-        await db.close()
+    await pipeline_service.add_log(task_id, f"任务创建: {len(req.target_platforms)} 个平台", step=0)
+
+    return ApiResponse.success(data={
+        "task_id": task_id,
+        "task_no": task_no,
+        "file_manifest": manifest,
+    })
 
 
 @router.post("/{task_id}/scan-folder")
@@ -296,21 +293,19 @@ async def get_task(task_id: int, user: UserInfo = Depends(get_current_user)):
     if user.role == "editor" and task["created_by"] != user.id:
         raise HTTPException(status_code=403, detail="无权查看此任务")
 
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT * FROM task_steps WHERE task_id = ? ORDER BY step", (task_id,)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM task_steps WHERE task_id = $1 ORDER BY step", task_id,
         )
-        task["steps"] = [dict(r) for r in await cursor.fetchall()]
+        task["steps"] = [dict(r) for r in rows]
 
-        cursor = await db.execute(
+        rows = await conn.fetch(
             """SELECT pt.*, p.name as platform_name FROM platform_tasks pt
-               JOIN platforms p ON pt.platform_id = p.id WHERE pt.task_id = ?""",
-            (task_id,),
+               JOIN platforms p ON pt.platform_id = p.id WHERE pt.task_id = $1""",
+            task_id,
         )
-        task["platform_tasks"] = [dict(r) for r in await cursor.fetchall()]
-    finally:
-        await db.close()
+        task["platform_tasks"] = [dict(r) for r in rows]
 
     return ApiResponse.success(data=task)
 
@@ -330,16 +325,16 @@ async def get_dynamic_categories(task_id: int, user: UserInfo = Depends(get_curr
     if not platform_ids:
         return ApiResponse.success(data={"categories": []})
 
-    db = await get_db()
-    try:
-        placeholders = ",".join("?" * len(platform_ids))
-        cursor = await db.execute(
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        placeholders = ",".join(f"${i+1}" for i in range(len(platform_ids)))
+        rows = await conn.fetch(
             f"SELECT id, name, categories FROM platforms WHERE id IN ({placeholders})",
-            platform_ids,
+            *platform_ids,
         )
         all_cats = set()
         count_with = 0
-        for row in await cursor.fetchall():
+        for row in rows:
             cats = json.loads(row["categories"] or "[]")
             if cats:
                 count_with += 1
@@ -350,8 +345,6 @@ async def get_dynamic_categories(task_id: int, user: UserInfo = Depends(get_curr
             "platforms_with_categories": count_with,
             "total_platforms": len(platform_ids),
         })
-    finally:
-        await db.close()
 
 
 @router.post("/{task_id}/step/2/generate")
@@ -363,17 +356,14 @@ async def generate_copy(task_id: int, req: GenerateCopyRequest,
         raise HTTPException(status_code=404, detail="任务不存在")
 
     # 保存输入参数到任务
-    db = await get_db()
-    try:
-        await db.execute(
-            """UPDATE tasks SET protagonist = ?, event_desc = ?, style = ?,
-               author = ?, categories = ?, updated_at = datetime('now') WHERE id = ?""",
-            (req.protagonist, req.event, req.style, req.author,
-             json.dumps(req.categories), task_id),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE tasks SET protagonist = $1, event_desc = $2, style = $3,
+               author = $4, categories = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6""",
+            req.protagonist, req.event, req.style, req.author,
+            json.dumps(req.categories), task_id,
         )
-        await db.commit()
-    finally:
-        await db.close()
 
     # 后台异步生成
     bg.add_task(copywrite_service.generate, task_id, req.model_dump())
@@ -384,17 +374,14 @@ async def generate_copy(task_id: int, req: GenerateCopyRequest,
 @router.put("/{task_id}/step/2/confirm")
 async def confirm_copy(task_id: int, req: ConfirmCopyRequest, user: UserInfo = Depends(get_current_user)):
     """确认文案，推进到 Step 3。"""
-    db = await get_db()
-    try:
-        await db.execute(
-            """UPDATE tasks SET confirmed_title = ?, confirmed_keywords = ?, confirmed_body = ?,
-               author = ?, categories = ?, rename_prefix = ?, updated_at = datetime('now') WHERE id = ?""",
-            (req.title, req.keywords, req.body, req.author,
-             json.dumps(req.categories), req.title[:20], task_id),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE tasks SET confirmed_title = $1, confirmed_keywords = $2, confirmed_body = $3,
+               author = $4, categories = $5, rename_prefix = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7""",
+            req.title, req.keywords, req.body, req.author,
+            json.dumps(req.categories), req.title[:20], task_id,
         )
-        await db.commit()
-    finally:
-        await db.close()
 
     await pipeline_service.advance_step(task_id, from_step=1, to_step=2)
     await pipeline_service.add_log(task_id, f"文案已确认: {req.title[:30]}", step=1)
@@ -477,19 +464,17 @@ async def confirm_watermark(task_id: int, bg: BackgroundTasks, user: UserInfo = 
 @router.get("/{task_id}/step/5/progress")
 async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_current_user)):
     """获取各平台水印处理进度。"""
-    db = await get_db()
-    try:
-        cursor = await db.execute(
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
             """SELECT pt.platform_id, p.name, pt.wm_status, pt.wm_progress, pt.wm_error
                FROM platform_tasks pt
                JOIN platforms p ON pt.platform_id = p.id
-               WHERE pt.task_id = ?""",
-            (task_id,),
+               WHERE pt.task_id = $1""",
+            task_id,
         )
-        progress = [dict(r) for r in await cursor.fetchall()]
+        progress = [dict(r) for r in rows]
         return ApiResponse.success(data=progress)
-    finally:
-        await db.close()
 
 
 # ══════════════════════════════════════════
@@ -499,19 +484,17 @@ async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_curr
 @router.get("/{task_id}/step/6/status")
 async def get_publish_status(task_id: int, user: UserInfo = Depends(get_current_user)):
     """获取各平台上传/切片/发布状态。"""
-    db = await get_db()
-    try:
-        cursor = await db.execute(
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
             """SELECT pt.*, p.name as platform_name
                FROM platform_tasks pt
                JOIN platforms p ON pt.platform_id = p.id
-               WHERE pt.task_id = ?""",
-            (task_id,),
+               WHERE pt.task_id = $1""",
+            task_id,
         )
-        statuses = [dict(r) for r in await cursor.fetchall()]
+        statuses = [dict(r) for r in rows]
         return ApiResponse.success(data=statuses)
-    finally:
-        await db.close()
 
 
 @router.post("/{task_id}/step/6/publish")

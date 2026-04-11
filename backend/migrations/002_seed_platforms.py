@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from database import get_db, init_db
+from database import get_pool, init_db
 
 PLATFORMS = [
     {"name": "男同网",        "dept": "1部4组", "categories": ["同性","视频"]},
@@ -50,21 +50,18 @@ PLATFORMS = [
 
 async def seed():
     await init_db()
-    db = await get_db()
-    try:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         for p in PLATFORMS:
-            await db.execute(
-                """INSERT OR IGNORE INTO platforms (name, dept, categories)
-                   VALUES (?, ?, ?)""",
-                (p["name"], p["dept"], json.dumps(p["categories"], ensure_ascii=False)),
+            await conn.execute(
+                """INSERT INTO platforms (name, dept, categories)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (name) DO NOTHING""",
+                p["name"], p["dept"], json.dumps(p["categories"], ensure_ascii=False),
             )
-        await db.commit()
 
-        cursor = await db.execute("SELECT COUNT(*) FROM platforms")
-        count = (await cursor.fetchone())[0]
+        count = await conn.fetchval("SELECT COUNT(*) FROM platforms")
         print(f"[SEED] Platforms: {count} total ({len(PLATFORMS)} in seed)")
-    finally:
-        await db.close()
 
 
 if __name__ == "__main__":

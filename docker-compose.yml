@@ -1,6 +1,27 @@
 version: "3.8"
 
 services:
+  # PostgreSQL 数据库
+  omnipub-db:
+    image: postgres:15-alpine
+    container_name: omnipub-db
+    environment:
+      POSTGRES_DB: omnipub
+      POSTGRES_USER: omnipub
+      POSTGRES_PASSWORD: omnipub2026
+      TZ: Asia/Shanghai
+    volumes:
+      - omnipub-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnipub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OmniPublish 应用
   omnipub:
     build: .
     container_name: omnipub
@@ -8,14 +29,20 @@ services:
       - "9527:9527"
     volumes:
       - ./config.json:/app/config.json:ro
-      - ./data:/app/data
       - ./backend/uploads:/app/backend/uploads
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://omnipub:omnipub2026@omnipub-db:5432/omnipub
+    depends_on:
+      omnipub-db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9527/api/ping')"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  omnipub-pgdata:

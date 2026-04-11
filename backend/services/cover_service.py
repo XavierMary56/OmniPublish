@@ -43,16 +43,13 @@ class CoverService:
                 raise RuntimeError("未能生成任何封面候选")
 
             # 更新数据库
-            from database import get_db
-            db = await get_db()
-            try:
-                await db.execute(
-                    "UPDATE tasks SET cover_candidates = ?, cover_layout = ?, updated_at = datetime('now') WHERE id = ?",
-                    (json.dumps(cover_paths, ensure_ascii=False), layout, task_id),
+            from database import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE tasks SET cover_candidates = $1, cover_layout = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+                    json.dumps(cover_paths, ensure_ascii=False), layout, task_id,
                 )
-                await db.commit()
-            finally:
-                await db.close()
 
             # 状态：等待用户确认
             await pipeline_service.update_step_status(
@@ -74,30 +71,26 @@ class CoverService:
 
     async def confirm_cover(self, task_id: int, cover_index: int) -> str:
         """确认选中的封面，推进到 Step 5。"""
-        from database import get_db
-        db = await get_db()
-        try:
-            cursor = await db.execute(
-                "SELECT cover_candidates FROM tasks WHERE id = ?", (task_id,)
+        from database import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT cover_candidates FROM tasks WHERE id = $1", task_id,
             )
-            task = await cursor.fetchone()
-            if not task:
+            if not row:
                 raise ValueError("任务不存在")
 
-            candidates = json.loads(task["cover_candidates"] or "[]")
+            candidates = json.loads(row["cover_candidates"] or "[]")
             if not candidates:
                 raise ValueError("没有可用的封面候选")
             if cover_index >= len(candidates):
                 raise ValueError(f"封面索引超出范围: {cover_index} >= {len(candidates)}")
 
             cover_path = candidates[cover_index]
-            await db.execute(
-                "UPDATE tasks SET cover_path = ?, updated_at = datetime('now') WHERE id = ?",
-                (cover_path, task_id),
+            await conn.execute(
+                "UPDATE tasks SET cover_path = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                cover_path, task_id,
             )
-            await db.commit()
-        finally:
-            await db.close()
 
         # 推进到 Step 5
         await pipeline_service.advance_step(task_id, from_step=3, to_step=4)

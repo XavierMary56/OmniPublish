@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from services.pipeline_service import pipeline_service
-from database import get_db
+from database import get_pool
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -24,28 +24,24 @@ class WatermarkService:
 
     async def get_watermark_plan(self, task_id: int) -> list:
         """获取各平台的水印方案。"""
-        db = await get_db()
-        try:
-            cursor = await db.execute("SELECT target_platforms FROM tasks WHERE id = ?", (task_id,))
-            task = await cursor.fetchone()
-            if not task:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT target_platforms FROM tasks WHERE id = $1", task_id)
+            if not row:
                 return []
 
-            platform_ids = json.loads(task["target_platforms"])
+            platform_ids = json.loads(row["target_platforms"])
             if not platform_ids:
                 return []
 
-            placeholders = ",".join("?" * len(platform_ids))
-            cursor = await db.execute(
+            placeholders = ",".join(f"${i+1}" for i in range(len(platform_ids)))
+            rows = await conn.fetch(
                 f"""SELECT id, name, dept, img_wm_file, img_wm_position, img_wm_width,
                     img_wm_opacity, vid_wm_file, vid_wm_mode, vid_wm_scale
                     FROM platforms WHERE id IN ({placeholders})""",
-                platform_ids,
+                *platform_ids,
             )
-            rows = await cursor.fetchall()
             return [dict(r) for r in rows]
-        finally:
-            await db.close()
 
     async def process_all_platforms(self, task_id: int):
         """确认后并行处理所有平台的水印。"""
@@ -60,13 +56,10 @@ class WatermarkService:
             return
 
         # 获取任务文件夹
-        db = await get_db()
-        try:
-            cursor = await db.execute("SELECT folder_path FROM tasks WHERE id = ?", (task_id,))
-            task = await cursor.fetchone()
-            folder_path = task["folder_path"]
-        finally:
-            await db.close()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT folder_path FROM tasks WHERE id = $1", task_id)
+            folder_path = row["folder_path"]
 
         # 为每个平台创建异步任务
         tasks = []

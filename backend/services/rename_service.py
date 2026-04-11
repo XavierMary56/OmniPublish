@@ -56,16 +56,13 @@ class RenameService:
                 raise RuntimeError("重命名执行失败，已自动回滚")
 
             # 更新数据库
-            from database import get_db
-            db = await get_db()
-            try:
-                await db.execute(
-                    "UPDATE tasks SET rename_prefix = ?, rename_mapping = ?, updated_at = datetime('now') WHERE id = ?",
-                    (prefix, json.dumps(preview, ensure_ascii=False), task_id),
+            from database import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE tasks SET rename_prefix = $1, rename_mapping = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+                    prefix, json.dumps(preview, ensure_ascii=False), task_id,
                 )
-                await db.commit()
-            finally:
-                await db.close()
 
             # 推进到 Step 4
             await pipeline_service.advance_step(task_id, from_step=2, to_step=3)

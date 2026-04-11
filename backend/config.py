@@ -68,12 +68,18 @@ class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     yolo: YoloConfig = field(default_factory=YoloConfig)
     defaults: DefaultsConfig = field(default_factory=DefaultsConfig)
-    # 路径
-    db_path: str = ""
+    # 数据库
+    db_path: str = ""  # 保留兼容，SQLite 备用
+    database_url: str = ""
 
     def __post_init__(self):
         if not self.db_path:
             self.db_path = str(DATA_DIR / "omnipub.db")
+        if not self.database_url:
+            self.database_url = os.environ.get(
+                "DATABASE_URL",
+                "postgresql://omnipub:omnipub2026@localhost:5433/omnipub"
+            )
 
 
 def load_config() -> AppConfig:

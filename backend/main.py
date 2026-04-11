@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import settings, ROOT_DIR, BACKEND_DIR
-from database import init_db
+from database import init_db, close_db
 from websocket.manager import ws_manager
 
 # ── 路由导入 ──
@@ -33,22 +33,21 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_daily_cleanup())
     yield
     cleanup_task.cancel()
+    await close_db()
     print("[OmniPublish] Shutting down...")
 
 
 async def _daily_cleanup():
     """每天凌晨 3 点清理过期日志。"""
-    from database import cleanup_old_logs, get_db
+    from database import cleanup_old_logs, get_pool
     while True:
         try:
             await asyncio.sleep(24 * 3600)  # 每 24 小时执行一次
-            db = await get_db()
-            try:
-                deleted = await cleanup_old_logs(db, days=30)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                deleted = await cleanup_old_logs(conn, days=30)
                 if deleted > 0:
                     print(f"[Cleanup] Deleted {deleted} old log entries")
-            finally:
-                await db.close()
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -120,7 +119,7 @@ async def ping():
 async def info():
     return {
         "version": "2.0.0",
-        "db_path": settings.db_path,
+        "database": "postgresql",
         "ws_connections": {
             "tasks": ws_manager.task_count,
             "notifications": ws_manager.notification_count,
@@ -149,7 +148,7 @@ def main():
 ╠══════════════════════════════════════════╣
 ║  URL:  http://{args.host}:{args.port}          ║
 ║  Docs: http://{args.host}:{args.port}/docs     ║
-║  DB:   {Path(settings.db_path).name:34s} ║
+║  DB:   PostgreSQL                        ║
 ╚══════════════════════════════════════════╝
     """)
 

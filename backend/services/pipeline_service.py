@@ -9,8 +9,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-import aiosqlite
-from database import get_db
+from database import get_pool
 from websocket.manager import ws_manager
 
 
@@ -21,10 +20,9 @@ class PipelineService:
 
     async def get_task(self, task_id: int) -> Optional[dict]:
         """获取任务完整数据。"""
-        db = await get_db()
-        try:
-            cursor = await db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-            row = await cursor.fetchone()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
             if not row:
                 return None
             task = dict(row)
@@ -37,141 +35,156 @@ class PipelineService:
                     except (json.JSONDecodeError, TypeError):
                         pass
             return task
-        finally:
-            await db.close()
 
     async def advance_step(self, task_id: int, from_step: int, to_step: int):
         """推进步骤：标记当前步骤 done，下一步 pending→对应初始状态。"""
-        db = await get_db()
-        try:
-            now = datetime.now().isoformat()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                now = datetime.now().isoformat()
 
-            # 完成当前步骤
-            await db.execute(
-                "UPDATE task_steps SET status = 'done', finished_at = ? WHERE task_id = ? AND step = ?",
-                (now, task_id, from_step),
-            )
+                # 完成当前步骤
+                await conn.execute(
+                    "UPDATE task_steps SET status = 'done', finished_at = $1 WHERE task_id = $2 AND step = $3",
+                    now, task_id, from_step,
+                )
 
-            # 更新下一步状态
-            next_status = self._initial_status_for_step(to_step)
-            await db.execute(
-                "UPDATE task_steps SET status = ?, started_at = ? WHERE task_id = ? AND step = ?",
-                (next_status, now, task_id, to_step),
-            )
+                # 更新下一步状态
+                next_status = self._initial_status_for_step(to_step)
+                await conn.execute(
+                    "UPDATE task_steps SET status = $1, started_at = $2 WHERE task_id = $3 AND step = $4",
+                    next_status, now, task_id, to_step,
+                )
 
-            # 更新任务主表
-            task_status = "awaiting_confirm" if next_status == "awaiting_confirm" else "running"
-            await db.execute(
-                "UPDATE tasks SET current_step = ?, status = ?, updated_at = ? WHERE id = ?",
-                (to_step, task_status, now, task_id),
-            )
+                # 更新任务主表
+                task_status = "awaiting_confirm" if next_status == "awaiting_confirm" else "running"
+                await conn.execute(
+                    "UPDATE tasks SET current_step = $1, status = $2, updated_at = $3 WHERE id = $4",
+                    to_step, task_status, now, task_id,
+                )
 
-            await db.commit()
-
-            # WebSocket 推送
-            await ws_manager.send_to_task(task_id, {
-                "type": "step_changed",
-                "from_step": from_step,
-                "to_step": to_step,
-                "step_name": self.STEP_NAMES[to_step] if to_step < 6 else "完成",
-                "status": next_status,
-            })
-
-        finally:
-            await db.close()
+        # WebSocket 推送
+        await ws_manager.send_to_task(task_id, {
+            "type": "step_changed",
+            "from_step": from_step,
+            "to_step": to_step,
+            "step_name": self.STEP_NAMES[to_step] if to_step < 6 else "完成",
+            "status": next_status,
+        })
 
     async def update_step_status(self, task_id: int, step: int, status: str,
                                   error: str = None, data: dict = None):
         """更新某步骤的状态。"""
-        db = await get_db()
-        try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             now = datetime.now().isoformat()
-            updates = ["status = ?", "finished_at = ?" if status in ("done", "failed") else "started_at = ?"]
-            params = [status, now]
+            # Build dynamic SET clause with numbered params
+            set_parts = ["status = $1"]
+            params = [status]
+            param_idx = 1
+
+            if status in ("done", "failed"):
+                param_idx += 1
+                set_parts.append(f"finished_at = ${param_idx}")
+                params.append(now)
+            else:
+                param_idx += 1
+                set_parts.append(f"started_at = ${param_idx}")
+                params.append(now)
 
             if error:
-                updates.append("error = ?")
+                param_idx += 1
+                set_parts.append(f"error = ${param_idx}")
                 params.append(error)
             if data:
-                updates.append("data = ?")
+                param_idx += 1
+                set_parts.append(f"data = ${param_idx}")
                 params.append(json.dumps(data, ensure_ascii=False))
 
+            param_idx += 1
+            task_id_param = param_idx
+            param_idx += 1
+            step_param = param_idx
             params.extend([task_id, step])
-            await db.execute(
-                f"UPDATE task_steps SET {', '.join(updates)} WHERE task_id = ? AND step = ?",
-                params,
-            )
-            await db.commit()
 
-            await ws_manager.send_to_task(task_id, {
-                "type": "step_changed",
-                "step": step,
-                "status": status,
-                "error": error,
-            })
-        finally:
-            await db.close()
+            await conn.execute(
+                f"UPDATE task_steps SET {', '.join(set_parts)} WHERE task_id = ${task_id_param} AND step = ${step_param}",
+                *params,
+            )
+
+        await ws_manager.send_to_task(task_id, {
+            "type": "step_changed",
+            "step": step,
+            "status": status,
+            "error": error,
+        })
 
     async def update_task_status(self, task_id: int, status: str):
         """更新任务总体状态。"""
-        db = await get_db()
-        try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             now = datetime.now().isoformat()
             finished = now if status in ("done", "failed", "partial") else None
-            await db.execute(
-                "UPDATE tasks SET status = ?, updated_at = ?, finished_at = ? WHERE id = ?",
-                (status, now, finished, task_id),
+            await conn.execute(
+                "UPDATE tasks SET status = $1, updated_at = $2, finished_at = $3 WHERE id = $4",
+                status, now, finished, task_id,
             )
-            await db.commit()
-        finally:
-            await db.close()
 
     async def update_platform_task(self, task_id: int, platform_id: int, **kwargs):
         """更新平台子任务状态。"""
         if not kwargs:
             return
-        db = await get_db()
-        try:
-            updates = [f"{k} = ?" for k in kwargs]
-            updates.append("updated_at = ?")
-            params = list(kwargs.values()) + [datetime.now().isoformat(), task_id, platform_id]
-            await db.execute(
-                f"UPDATE platform_tasks SET {', '.join(updates)} WHERE task_id = ? AND platform_id = ?",
-                params,
-            )
-            await db.commit()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            set_parts = []
+            params = []
+            param_idx = 0
+            for k, v in kwargs.items():
+                param_idx += 1
+                set_parts.append(f"{k} = ${param_idx}")
+                params.append(v)
 
-            # 推送进度
-            await ws_manager.send_to_task(task_id, {
-                "type": "platform_update",
-                "platform_id": platform_id,
-                **kwargs,
-            })
-        finally:
-            await db.close()
+            param_idx += 1
+            set_parts.append(f"updated_at = ${param_idx}")
+            params.append(datetime.now().isoformat())
+
+            param_idx += 1
+            task_id_param = param_idx
+            param_idx += 1
+            platform_id_param = param_idx
+            params.extend([task_id, platform_id])
+
+            await conn.execute(
+                f"UPDATE platform_tasks SET {', '.join(set_parts)} WHERE task_id = ${task_id_param} AND platform_id = ${platform_id_param}",
+                *params,
+            )
+
+        # 推送进度
+        await ws_manager.send_to_task(task_id, {
+            "type": "platform_update",
+            "platform_id": platform_id,
+            **kwargs,
+        })
 
     async def add_log(self, task_id: int, message: str, step: int = None,
                        platform_id: int = None, level: str = "info"):
         """记录任务日志。"""
-        db = await get_db()
-        try:
-            await db.execute(
-                "INSERT INTO task_logs (task_id, step, platform_id, level, message) VALUES (?, ?, ?, ?, ?)",
-                (task_id, step, platform_id, level, message),
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO task_logs (task_id, step, platform_id, level, message) VALUES ($1, $2, $3, $4, $5)",
+                task_id, step, platform_id, level, message,
             )
-            await db.commit()
-        finally:
-            await db.close()
 
     async def compute_task_status(self, task_id: int) -> str:
         """根据各步骤和平台子任务状态计算任务总体状态。"""
-        db = await get_db()
-        try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             # 检查步骤状态
-            cursor = await db.execute(
-                "SELECT step, status FROM task_steps WHERE task_id = ? ORDER BY step", (task_id,)
+            rows = await conn.fetch(
+                "SELECT step, status FROM task_steps WHERE task_id = $1 ORDER BY step", task_id,
             )
-            steps = {row["step"]: row["status"] for row in await cursor.fetchall()}
+            steps = {row["step"]: row["status"] for row in rows}
 
             for s in range(6):
                 st = steps.get(s, "pending")
@@ -183,11 +196,10 @@ class PipelineService:
                     return "failed"
 
             # 检查平台子任务
-            cursor = await db.execute(
-                "SELECT publish_status, transcode_status FROM platform_tasks WHERE task_id = ?",
-                (task_id,),
+            rows = await conn.fetch(
+                "SELECT publish_status, transcode_status FROM platform_tasks WHERE task_id = $1",
+                task_id,
             )
-            rows = await cursor.fetchall()
             if not rows:
                 return steps.get(5, "running")
 
@@ -204,17 +216,9 @@ class PipelineService:
             if transcoding > 0:
                 return "slicing"
             return "running"
-        finally:
-            await db.close()
 
     def _initial_status_for_step(self, step: int) -> str:
         """每步的初始状态。"""
-        # Step 0: 用户操作
-        # Step 1: AI 生成后等待确认
-        # Step 2: 展示预览等待确认
-        # Step 3: 生成候选等待确认
-        # Step 4: 展示方案等待确认
-        # Step 5: 并行上传
         if step in (1, 2, 3, 4):
             return "awaiting_confirm"
         return "running"

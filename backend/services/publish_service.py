@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from services.pipeline_service import pipeline_service
-from database import get_db
+from database import get_pool
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -36,42 +36,39 @@ class PublishService:
 
     async def publish_platforms(self, task_id: int, platform_ids: list = None):
         """发布指定平台（或全部已就绪）。"""
-        db = await get_db()
-        try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             # 获取任务信息
-            cursor = await db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-            task = await cursor.fetchone()
-            if not task:
+            row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+            if not row:
                 raise ValueError("任务不存在")
 
-            task_dict = dict(task)
+            task_dict = dict(row)
 
             # 获取平台子任务
             if platform_ids:
-                placeholders = ",".join("?" * len(platform_ids))
-                cursor = await db.execute(
+                placeholders = ",".join(f"${i+2}" for i in range(len(platform_ids)))
+                pt_rows_raw = await conn.fetch(
                     f"""SELECT pt.*, p.name, p.api_base_url, p.project_code,
                         p.layout_template, p.cms_username, p.cms_password, p.categories as platform_cats
                         FROM platform_tasks pt
                         JOIN platforms p ON pt.platform_id = p.id
-                        WHERE pt.task_id = ? AND pt.platform_id IN ({placeholders})""",
-                    [task_id] + platform_ids,
+                        WHERE pt.task_id = $1 AND pt.platform_id IN ({placeholders})""",
+                    task_id, *platform_ids,
                 )
             else:
                 # 全部已就绪（水印完成的）
-                cursor = await db.execute(
+                pt_rows_raw = await conn.fetch(
                     """SELECT pt.*, p.name, p.api_base_url, p.project_code,
                        p.layout_template, p.cms_username, p.cms_password, p.categories as platform_cats
                        FROM platform_tasks pt
                        JOIN platforms p ON pt.platform_id = p.id
-                       WHERE pt.task_id = ? AND pt.wm_status = 'done'
+                       WHERE pt.task_id = $1 AND pt.wm_status = 'done'
                        AND pt.publish_status IN ('pending', 'failed')""",
-                    (task_id,),
+                    task_id,
                 )
 
-            pt_rows = [dict(r) for r in await cursor.fetchall()]
-        finally:
-            await db.close()
+            pt_rows = [dict(r) for r in pt_rows_raw]
 
         if not pt_rows:
             await pipeline_service.add_log(task_id, "没有可发布的平台", step=5, level="warn")
