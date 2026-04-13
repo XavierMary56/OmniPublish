@@ -71,11 +71,14 @@ async def upload_files(
         safe_name = safe_name.replace('..', '_').replace('/', '_').replace('\\', '_')
         dest_path = os.path.join(folder_path, safe_name)
 
-        # 写入文件
-        content = await f.read()
-        total_size += len(content)
+        # 流式写入（避免大文件一次性占满内存）
         with open(dest_path, "wb") as fp:
-            fp.write(content)
+            while True:
+                chunk = await f.read(1024 * 1024)  # 1MB 块
+                if not chunk:
+                    break
+                fp.write(chunk)
+                total_size += len(chunk)
         saved_files.append(safe_name)
 
     # 自动扫描识别
@@ -185,16 +188,29 @@ async def upload_with_dedup(
         safe_name = os.path.basename(safe_name)
         safe_name = safe_name.replace('..', '_').replace('/', '_').replace('\\', '_')
 
-        content = await f.read()
-
-        # 去重：同名 + 同大小 = 跳过
-        if safe_name in existing and existing[safe_name] == len(content):
+        # 去重：同名 + 同大小 = 跳过（先检查 header 中的 size）
+        file_size = f.size if hasattr(f, 'size') and f.size else None
+        if file_size and safe_name in existing and existing[safe_name] == file_size:
             skipped += 1
             continue
 
+        # 流式写入（不一次性读进内存，避免大文件 OOM）
         dest_path = os.path.join(folder_path, safe_name)
+        written = 0
         with open(dest_path, "wb") as fp:
-            fp.write(content)
+            while True:
+                chunk = await f.read(1024 * 1024)  # 1MB 块
+                if not chunk:
+                    break
+                fp.write(chunk)
+                written += len(chunk)
+
+        # 写完后再检查去重（兜底：size 未知时）
+        if not file_size and safe_name in existing and existing[safe_name] == written:
+            os.remove(dest_path)
+            skipped += 1
+            continue
+
         saved += 1
 
     manifest = _scan_folder(folder_path)
