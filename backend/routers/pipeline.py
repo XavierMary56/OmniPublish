@@ -656,11 +656,11 @@ def _fix_filename_encoding(name: str) -> str:
 
 
 def _scan_folder(folder_path: str) -> dict:
-    """扫描文件夹，返回文件清单。"""
+    """扫描文件夹，返回文件清单 + TXT 内容。"""
     img_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
     vid_exts = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv", ".webm"}
-    txt_exts = {".txt", ".doc", ".docx"}
-    manifest = {"images": [], "videos": [], "txts": []}
+    txt_exts = {".txt"}
+    manifest = {"images": [], "videos": [], "txts": [], "txt_contents": {}}
     if not os.path.isdir(folder_path):
         return manifest
     for fname in sorted(os.listdir(folder_path)):
@@ -674,4 +674,12 @@ def _scan_folder(folder_path: str) -> dict:
             manifest["videos"].append(fname)
         elif ext in txt_exts:
             manifest["txts"].append(fname)
+            # 读取 TXT 内容（限 10KB，避免大文件）
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read(10240).strip()
+                if content:
+                    manifest["txt_contents"][fname] = content
+            except Exception:
+                pass
     return manifest

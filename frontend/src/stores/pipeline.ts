@@ -14,7 +14,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // Step 1
   const folderPath = ref('')
   const selectedPlatforms = ref<number[]>([])
-  const fileManifest = ref<{ images: string[]; videos: string[]; txts: string[] }>({ images: [], videos: [], txts: [] })
+  const fileManifest = ref<{ images: string[]; videos: string[]; txts: string[]; txt_contents?: Record<string, string> }>({ images: [], videos: [], txts: [] })
   const isUploading = ref(false)
   const uploadProgress = ref(0)
 

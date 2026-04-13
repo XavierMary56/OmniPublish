@@ -118,6 +118,72 @@ async function handleNext() {
   if (store.currentStep === 0) {
     await store.createTask(store.folderPath, store.selectedPlatforms)
     await store.loadCategories()
+    // 自动从 TXT 提取内容填充文案表单
+    autoFillFromTxt()
+  }
+}
+
+/** 从上传的 TXT 文件内容自动填充文案输入 */
+function autoFillFromTxt() {
+  const contents = store.fileManifest.txt_contents
+  if (!contents || Object.keys(contents).length === 0) return
+
+  // 合并所有 TXT 内容
+  const allText = Object.values(contents).join('\n\n').trim()
+  if (!allText) return
+
+  // 尝试解析结构化内容（标题:xxx 主角:xxx 等）
+  const lines = allText.split('\n').map(l => l.trim()).filter(Boolean)
+
+  let protagonist = ''
+  let event = ''
+  let photos = ''
+  let videoDesc = ''
+  let body = ''
+  const bodyLines: string[] = []
+
+  for (const line of lines) {
+    const lower = line.toLowerCase()
+    // 匹配 "主角：xxx" 或 "主角:xxx" 格式
+    const kv = line.match(/^(主角|角色|人物|protagonist)[：:]\s*(.+)/i)
+    if (kv) { protagonist = kv[2].trim(); continue }
+
+    const ev = line.match(/^(事件|事情|描述|event)[：:]\s*(.+)/i)
+    if (ev) { event = ev[2].trim(); continue }
+
+    const ph = line.match(/^(照片|图片|photos?)[：:]\s*(.+)/i)
+    if (ph) { photos = ph[2].trim(); continue }
+
+    const vd = line.match(/^(视频|video)[：:]\s*(.+)/i)
+    if (vd) { videoDesc = vd[2].trim(); continue }
+
+    // 其他行视为正文补充
+    bodyLines.push(line)
+  }
+
+  // 如果没有结构化字段，把整段内容当事件描述
+  if (!protagonist && !event && bodyLines.length > 0) {
+    // 第一行当主角，第二行当事件，剩下当补充
+    if (bodyLines.length >= 2) {
+      protagonist = bodyLines[0]
+      event = bodyLines[1]
+    } else {
+      event = bodyLines[0]
+    }
+  }
+
+  // 填充表单（只填空的字段，不覆盖用户已填内容）
+  if (protagonist && !copyForm.value.protagonist) copyForm.value.protagonist = protagonist
+  if (event && !copyForm.value.event) copyForm.value.event = event
+  if (photos && !copyForm.value.photos) copyForm.value.photos = photos
+  if (videoDesc && !copyForm.value.video_desc) copyForm.value.video_desc = videoDesc
+
+  // 图片/视频数量自动填充
+  if (!copyForm.value.photos && store.fileManifest.images.length > 0) {
+    copyForm.value.photos = `${store.fileManifest.images.length}张图片`
+  }
+  if (!copyForm.value.video_desc && store.fileManifest.videos.length > 0) {
+    copyForm.value.video_desc = `${store.fileManifest.videos.length}段视频`
   }
 }
 
@@ -425,6 +491,19 @@ function handleDiscardDraft() {
 
         <!-- Step 2: 文案生成 -->
         <div v-if="store.currentStep === 1">
+          <!-- TXT 素材内容展示 -->
+          <div v-if="store.fileManifest.txt_contents && Object.keys(store.fileManifest.txt_contents).length"
+               style="margin-bottom:16px;padding:14px;background:var(--bg1);border:1px solid var(--primary);border-radius:8px">
+            <div style="font-size:11px;color:var(--primary);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+              📄 已从素材 TXT 提取内容（已自动填充到下方表单）
+            </div>
+            <div v-for="(content, fname) in store.fileManifest.txt_contents" :key="fname"
+                 style="margin-bottom:8px">
+              <div style="font-size:10px;color:var(--t3);margin-bottom:4px">{{ fname }}</div>
+              <div style="font-size:12px;color:var(--t2);white-space:pre-wrap;max-height:120px;overflow-y:auto;line-height:1.6;padding:8px 10px;background:var(--bg3);border-radius:6px">{{ content }}</div>
+            </div>
+          </div>
+
           <div style="display:flex;gap:20px;flex-wrap:wrap">
             <div style="flex:1;min-width:280px">
               <h4 style="margin-bottom:12px;font-size:14px">文案输入</h4>
