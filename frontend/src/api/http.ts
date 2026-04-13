@@ -5,7 +5,9 @@ import { useAuthStore } from '../stores/auth'
 
 const http = axios.create({
   baseURL: '/api',
-  timeout: 60000,
+  timeout: 600000, // 10 分钟超时（支持大文件上传）
+  maxContentLength: Infinity,
+  maxBodyLength: Infinity,
   headers: { 'Content-Type': 'application/json' },
 })
 

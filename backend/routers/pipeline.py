@@ -90,6 +90,44 @@ async def upload_files(
 
 
 # ══════════════════════════════════════════
+# 本地路径直接引用（容器挂载目录）
+# ══════════════════════════════════════════
+
+@router.post("/upload/local-path")
+async def use_local_path(
+    req: dict,
+    user: UserInfo = Depends(get_current_user),
+):
+    """直接引用容器内的本地路径（通过 volume 挂载），无需上传。"""
+    local_path = req.get("path", "").strip()
+    if not local_path:
+        raise HTTPException(status_code=400, detail="路径不能为空")
+
+    # 安全检查：只允许访问挂载目录
+    allowed_prefixes = ["/mnt/", "/app/backend/uploads/"]
+    if not any(local_path.startswith(p) for p in allowed_prefixes):
+        raise HTTPException(status_code=400, detail=f"不允许访问该路径。请使用挂载目录（如 /mnt/素材/...）")
+
+    if not os.path.isdir(local_path):
+        raise HTTPException(status_code=400, detail=f"目录不存在: {local_path}")
+
+    manifest = _scan_folder(local_path)
+    total_files = len(manifest["images"]) + len(manifest["videos"]) + len(manifest["txts"])
+    if total_files == 0:
+        raise HTTPException(status_code=400, detail="目录中未找到图片、视频或文案文件")
+
+    # 使用目录名作为 folder_id
+    folder_id = os.path.basename(local_path.rstrip("/"))
+
+    return ApiResponse.success(data={
+        "folder_path": local_path,
+        "folder_id": folder_id,
+        "total_files": total_files,
+        "file_manifest": manifest,
+    })
+
+
+# ══════════════════════════════════════════
 # 素材检查（去重 + 草稿恢复）
 # ══════════════════════════════════════════
 

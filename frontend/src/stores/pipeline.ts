@@ -40,42 +40,58 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // WebSocket
   let ws: OmniWs | null = null
 
-  // 分片大小：10MB，大文件阈值：50MB，并发数：4
+  // 分片配置（仅远程部署时使用）
   const CHUNK_SIZE = 10 * 1024 * 1024
-  const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024
+  const LARGE_FILE_THRESHOLD = 500 * 1024 * 1024  // 500MB 以上才分片
   const CONCURRENT_UPLOADS = 4
   const folderId = ref('')
 
-  /** 上传素材文件：小文件直传，大文件(>50MB)分片上传 */
+  /** 上传素材文件：优先直传，超大文件(>500MB)才分片 */
   async function uploadFiles(files: File[]) {
     if (!files.length) return
     isUploading.value = true
     uploadProgress.value = 0
 
     try {
-      // 分离大文件和小文件
-      const smallFiles = files.filter(f => f.size <= LARGE_FILE_THRESHOLD)
+      // 检查是否有超大文件需要分片
       const largeFiles = files.filter(f => f.size > LARGE_FILE_THRESHOLD)
+      const normalFiles = files.filter(f => f.size <= LARGE_FILE_THRESHOLD)
       const totalSize = files.reduce((s, f) => s + f.size, 0)
       let uploadedSize = 0
 
-      // 1. 先直传所有小文件（一次性）
-      if (smallFiles.length > 0) {
+      // 1. 所有普通文件（含视频）直传（本地部署很快）
+      if (normalFiles.length > 0) {
         if (folderId.value) {
-          await uploadWithDedup(smallFiles, folderId.value)
+          await uploadWithDedup(normalFiles, folderId.value)
         } else {
-          await uploadDirect(smallFiles)
+          await uploadDirect(normalFiles)
         }
-        uploadedSize = smallFiles.reduce((s, f) => s + f.size, 0)
-        uploadProgress.value = Math.round((uploadedSize / totalSize) * 100)
+        uploadedSize = normalFiles.reduce((s, f) => s + f.size, 0)
+        uploadProgress.value = totalSize > 0 ? Math.round((uploadedSize / totalSize) * 100) : 100
       }
 
-      // 2. 逐个分片上传大文件
+      // 2. 超大文件(>500MB)分片上传
       for (const file of largeFiles) {
         await uploadSingleLargeFile(file, uploadedSize, totalSize)
         uploadedSize += file.size
       }
 
+      uploadProgress.value = 100
+      saveDraft()
+    } finally {
+      isUploading.value = false
+    }
+  }
+
+  /** 通过本地路径直接引用素材（不上传，容器挂载目录） */
+  async function useLocalPath(localPath: string) {
+    isUploading.value = true
+    uploadProgress.value = 0
+    try {
+      const data = await api('POST', '/pipeline/upload/local-path', { path: localPath })
+      folderPath.value = data.folder_path
+      folderId.value = data.folder_id || ''
+      fileManifest.value = data.file_manifest
       uploadProgress.value = 100
       saveDraft()
     } finally {
@@ -439,7 +455,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     renamePrefix, renamePreview,
     coverCandidates, selectedCover,
     wmProgress, publishStatus,
-    uploadFiles, createTask, loadTask, loadCategories,
+    uploadFiles, useLocalPath, createTask, loadTask, loadCategories,
     generateCopy, confirmCopy,
     previewRename, confirmRename,
     generateCover, confirmCover,

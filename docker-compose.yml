@@ -30,6 +30,8 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
       - ./backend/uploads:/app/backend/uploads
+      # 挂载本地素材目录 — 前端输入路径即可，无需上传
+      - D:/Users/Public/claude_ia:/mnt/素材:ro
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1

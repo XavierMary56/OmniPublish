@@ -15,6 +15,8 @@ const isDragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const folderInput = ref<HTMLInputElement | null>(null)
 
+const localPathInput = ref('')
+
 // Step 2 state
 const copyForm = ref({ protagonist: '', event: '', photos: '', video_desc: '', style: '反转打脸风', author: '编辑', categories: [] as string[] })
 const editTitle = ref('')
@@ -105,6 +107,16 @@ function onFileSelect(e: Event) {
 function triggerUpload() {
   // 默认选文件夹（webkitdirectory）
   folderInput.value?.click()
+}
+
+async function handleLocalPath() {
+  const path = localPathInput.value.trim()
+  if (!path) return
+  try {
+    await store.useLocalPath(path)
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '路径加载失败')
+  }
 }
 
 // Step navigation
@@ -429,6 +441,19 @@ function handleDiscardDraft() {
                   <div class="upload-hint">拖入素材文件夹 或 点击选择文件</div>
                   <div class="upload-sub">支持：图片（JPG/PNG/WebP）、视频（MP4/MOV）、文案（TXT）</div>
                 </template>
+              </div>
+
+              <!-- 本地路径输入（Docker 挂载目录，免上传） -->
+              <div style="margin-top:10px">
+                <div style="font-size:11px;color:var(--t3);margin-bottom:4px">或输入服务器本地路径（免上传，秒级加载）</div>
+                <div style="display:flex;gap:8px">
+                  <input v-model="localPathInput" class="form-input" style="flex:1"
+                         placeholder="/mnt/素材/item_20260410/OmniPublish_V2/task1/task1" />
+                  <button class="btn btn-ghost" style="white-space:nowrap" @click="handleLocalPath"
+                          :disabled="!localPathInput.trim() || store.isUploading">
+                    📂 加载
+                  </button>
+                </div>
               </div>
 
               <!-- 文件识别结果 -->
