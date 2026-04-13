@@ -291,10 +291,41 @@ function handleDiscardDraft() {
                 </template>
 
                 <!-- 已上传，显示识别结果 -->
-                <template v-else-if="store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0">
-                  <div class="upload-icon">📂</div>
-                  <div class="upload-hint" style="color:var(--green)">素材已就绪 ✅</div>
-                  <div class="upload-sub">点击或拖入更多文件可追加</div>
+                <template v-else-if="store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0 || store.fileManifest.txts.length > 0">
+                  <div style="width:100%;text-align:left">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                      <span style="font-size:20px">📂</span>
+                      <span style="font-size:14px;font-weight:600;color:var(--green)">素材已就绪 ✅</span>
+                      <span style="font-size:11px;color:var(--t3);margin-left:auto">点击可追加文件</span>
+                    </div>
+                    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px">
+                      <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                        <span>🖼️</span>
+                        <span>图片 × <strong style="color:var(--primary)">{{ store.fileManifest.images.length }}</strong></span>
+                        <span v-if="store.fileManifest.images.length > 0 && store.fileManifest.images.length <= 6" style="font-size:11px;color:var(--t3)">
+                          ({{ store.fileManifest.images[0] }} ~ {{ store.fileManifest.images[store.fileManifest.images.length - 1] }})
+                        </span>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                        <span>🎬</span>
+                        <span>视频 × <strong style="color:var(--primary)">{{ store.fileManifest.videos.length }}</strong></span>
+                        <span v-if="store.fileManifest.videos.length > 0" style="font-size:11px;color:var(--t3)">
+                          ({{ store.fileManifest.videos.join(', ') }})
+                        </span>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                        <span>📄</span>
+                        <span>文案 × <strong :style="{color: store.fileManifest.txts.length ? 'var(--primary)' : 'var(--t3)'}">{{ store.fileManifest.txts.length }}</strong></span>
+                        <span v-if="!store.fileManifest.txts.length" style="font-size:11px;color:var(--t3)">(未检测到 TXT)</span>
+                      </div>
+                    </div>
+                    <!-- 文件名标签 -->
+                    <div v-if="store.fileManifest.images.length > 0 && store.fileManifest.images.length <= 20" style="display:flex;flex-wrap:wrap;gap:4px">
+                      <span v-for="f in store.fileManifest.images" :key="f" style="font-size:10px;padding:2px 6px;background:var(--bg4);border-radius:4px;color:var(--t2)">🖼️ {{ f }}</span>
+                      <span v-for="f in store.fileManifest.videos" :key="f" style="font-size:10px;padding:2px 6px;background:var(--bg4);border-radius:4px;color:var(--orange)">🎬 {{ f }}</span>
+                      <span v-for="f in store.fileManifest.txts" :key="f" style="font-size:10px;padding:2px 6px;background:var(--bg4);border-radius:4px;color:var(--green)">📄 {{ f }}</span>
+                    </div>
+                  </div>
                 </template>
 
                 <!-- 初始状态 -->
@@ -533,7 +564,7 @@ function handleDiscardDraft() {
 }
 .upload-zone:hover { border-color: var(--primary); color: var(--t2); background: rgba(79,195,247,.03); }
 .upload-zone.dragging { border-color: var(--primary); background: rgba(79,195,247,.08); border-style: solid; }
-.upload-zone.uploaded { border-color: var(--green); border-style: solid; background: rgba(129,199,132,.04); }
+.upload-zone.uploaded { border-color: var(--green); border-style: solid; background: rgba(129,199,132,.04); text-align: left; padding: 16px 20px; }
 .upload-icon { font-size: 36px; margin-bottom: 8px; }
 .upload-hint { font-size: 14px; font-weight: 500; }
 .upload-sub { font-size: 11px; color: var(--t3); margin-top: 4px; }
