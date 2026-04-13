@@ -135,6 +135,68 @@ async def use_local_path(
 
 
 # ══════════════════════════════════════════
+# 从已有上传复制大文件（解决大视频 HTTP 上传不稳定问题）
+# ══════════════════════════════════════════
+
+@router.post("/upload/copy-large-files")
+async def copy_large_files_from_existing(
+    folder_id: str,
+    filenames: List[str],
+    user: UserInfo = Depends(get_current_user),
+):
+    """在服务器已有上传目录中搜索同名文件，复制到目标文件夹。
+    解决大视频通过 HTTP 上传不稳定的问题。"""
+    target_dir = os.path.join(UPLOAD_ROOT, folder_id)
+    if not os.path.isdir(target_dir):
+        raise HTTPException(status_code=400, detail=f"目标文件夹不存在: {folder_id}")
+
+    copied = []
+    not_found = []
+
+    for fname in filenames:
+        # 如果目标已有则跳过
+        target_path = os.path.join(target_dir, fname)
+        if os.path.exists(target_path):
+            copied.append({"name": fname, "status": "exists"})
+            continue
+
+        # 在其他上传文件夹中搜索
+        found = False
+        for other_folder in os.listdir(UPLOAD_ROOT):
+            if other_folder == folder_id or other_folder.startswith("."):
+                continue
+            src_path = os.path.join(UPLOAD_ROOT, other_folder, fname)
+            if os.path.isfile(src_path):
+                # 硬链接（同磁盘秒级，不占额外空间）
+                try:
+                    os.link(src_path, target_path)
+                except OSError:
+                    # 跨设备则复制
+                    shutil.copy2(src_path, target_path)
+                copied.append({
+                    "name": fname,
+                    "status": "copied",
+                    "from": other_folder,
+                    "size_mb": round(os.path.getsize(target_path) / 1024 / 1024, 1),
+                })
+                found = True
+                break
+
+        if not found:
+            not_found.append(fname)
+
+    # 重新扫描目标文件夹
+    manifest = _scan_folder(target_dir)
+
+    return ApiResponse.success(data={
+        "folder_id": folder_id,
+        "copied": copied,
+        "not_found": not_found,
+        "file_manifest": manifest,
+    })
+
+
+# ══════════════════════════════════════════
 # 素材检查（去重 + 草稿恢复）
 # ══════════════════════════════════════════
 

@@ -59,12 +59,44 @@ export const usePipelineStore = defineStore('pipeline', () => {
       const totalSize = files.reduce((s, f) => s + f.size, 0)
       let uploadedSize = 0
 
-      // 1. 所有普通文件（含视频）直传（本地部署很快）
+      // 1. 所有普通文件（含视频）直传
       if (normalFiles.length > 0) {
-        if (folderId.value) {
-          await uploadWithDedup(normalFiles, folderId.value)
-        } else {
-          await uploadDirect(normalFiles)
+        try {
+          if (folderId.value) {
+            await uploadWithDedup(normalFiles, folderId.value)
+          } else {
+            await uploadDirect(normalFiles)
+          }
+        } catch (e: any) {
+          // 直传失败（可能是大视频超时），尝试只传小文件
+          const smallOnly = normalFiles.filter(f => f.size <= 50 * 1024 * 1024)
+          const failedLarge = normalFiles.filter(f => f.size > 50 * 1024 * 1024)
+          if (smallOnly.length > 0) {
+            if (folderId.value) {
+              await uploadWithDedup(smallOnly, folderId.value)
+            } else {
+              await uploadDirect(smallOnly)
+            }
+          }
+          // 大文件尝试从服务器已有上传中复制
+          if (failedLarge.length > 0 && folderId.value) {
+            const names = failedLarge.map(f => f.name)
+            try {
+              const copyResult = await api('POST', '/pipeline/upload/copy-large-files', null, )
+              // 用 query params 传
+              await http.post(`/pipeline/upload/copy-large-files?folder_id=${folderId.value}`, names, )
+            } catch { /* 复制也失败，忽略 */ }
+          }
+          // 重新扫描文件夹获取最新 manifest
+          if (folderId.value) {
+            try {
+              const check = await api('GET', `/pipeline/upload/check/${folderId.value}`)
+              if (check.exists) {
+                folderPath.value = check.folder_path
+                fileManifest.value = check.file_manifest
+              }
+            } catch {}
+          }
         }
         uploadedSize = normalFiles.reduce((s, f) => s + f.size, 0)
         uploadProgress.value = totalSize > 0 ? Math.round((uploadedSize / totalSize) * 100) : 100
@@ -72,8 +104,28 @@ export const usePipelineStore = defineStore('pipeline', () => {
 
       // 2. 超大文件(>500MB)分片上传
       for (const file of largeFiles) {
-        await uploadSingleLargeFile(file, uploadedSize, totalSize)
+        try {
+          await uploadSingleLargeFile(file, uploadedSize, totalSize)
+        } catch {
+          // 分片上传也失败，尝试从服务器复制
+          if (folderId.value) {
+            try {
+              await http.post(`/pipeline/upload/copy-large-files?folder_id=${folderId.value}`, [file.name])
+            } catch {}
+          }
+        }
         uploadedSize += file.size
+      }
+
+      // 最终重新获取 manifest
+      if (folderId.value) {
+        try {
+          const check = await api('GET', `/pipeline/upload/check/${folderId.value}`)
+          if (check.exists) {
+            folderPath.value = check.folder_path
+            fileManifest.value = check.file_manifest
+          }
+        } catch {}
       }
 
       uploadProgress.value = 100

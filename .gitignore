@@ -39,3 +39,6 @@ Thumbs.db
 runs/
 /backend/uploads
 /data
+/backend/uploads/tools
+/backend/uploads/watermarks
+/backend/uploads/tasks
