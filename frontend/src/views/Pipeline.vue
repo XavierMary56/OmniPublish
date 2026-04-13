@@ -104,9 +104,11 @@ function onFileSelect(e: Event) {
   }
 }
 
-function triggerUpload() {
-  // 默认选文件夹（webkitdirectory）
+function triggerUploadFolder() {
   folderInput.value?.click()
+}
+function triggerUploadFiles() {
+  fileInput.value?.click()
 }
 
 async function handleLocalPath() {
@@ -383,9 +385,8 @@ function handleDiscardDraft() {
               <!-- 拖拽上传区域 -->
               <div class="upload-zone"
                    :class="{ dragging: isDragging, uploaded: store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0 || store.fileManifest.txts.length > 0 }"
-                   @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-                   @click="triggerUpload()">
-                <input ref="fileInput" type="file" multiple accept="image/*,video/*,.txt" style="display:none" @change="onFileSelect" />
+                   @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+                <input ref="fileInput" type="file" multiple accept="image/*,video/*,.txt,.mp4,.mov,.avi,.mkv" style="display:none" @change="onFileSelect" />
                 <input ref="folderInput" type="file" webkitdirectory style="display:none" @change="onFileSelect" />
 
                 <!-- 上传中 -->
@@ -403,7 +404,10 @@ function handleDiscardDraft() {
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
                       <span style="font-size:20px">📂</span>
                       <span style="font-size:14px;font-weight:600;color:var(--green)">素材已就绪 ✅</span>
-                      <span style="font-size:11px;color:var(--t3);margin-left:auto">点击可追加文件</span>
+                      <div style="margin-left:auto;display:flex;gap:6px">
+                        <button class="btn btn-ghost btn-sm" @click.stop="triggerUploadFiles()">📎 追加文件</button>
+                        <button class="btn btn-ghost btn-sm" @click.stop="triggerUploadFolder()">📁 追加文件夹</button>
+                      </div>
                     </div>
                     <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px">
                       <div style="display:flex;align-items:center;gap:6px;font-size:13px">
@@ -438,8 +442,12 @@ function handleDiscardDraft() {
                 <!-- 初始状态 -->
                 <template v-else>
                   <div class="upload-icon">📁</div>
-                  <div class="upload-hint">拖入素材文件夹 或 点击选择文件</div>
-                  <div class="upload-sub">支持：图片（JPG/PNG/WebP）、视频（MP4/MOV）、文案（TXT）</div>
+                  <div class="upload-hint">拖入素材文件夹</div>
+                  <div class="upload-sub" style="margin-bottom:10px">支持：图片（JPG/PNG/WebP）、视频（MP4/MOV）、文案（TXT）</div>
+                  <div style="display:flex;gap:8px;justify-content:center" @click.stop>
+                    <button class="btn btn-primary btn-sm" @click="triggerUploadFolder()">📁 选择文件夹</button>
+                    <button class="btn btn-ghost btn-sm" @click="triggerUploadFiles()">📎 选择文件</button>
+                  </div>
                 </template>
               </div>
 
