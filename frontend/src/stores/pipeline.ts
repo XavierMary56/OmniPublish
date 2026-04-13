@@ -40,28 +40,42 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // WebSocket
   let ws: OmniWs | null = null
 
-  // 分片大小：2MB
-  const CHUNK_SIZE = 2 * 1024 * 1024
+  // 分片大小：5MB，大文件阈值：50MB
+  const CHUNK_SIZE = 5 * 1024 * 1024
+  const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024
   const folderId = ref('')
 
-  /** 上传素材文件（智能选择：小文件直传，大文件分片） */
+  /** 上传素材文件：小文件直传，大文件(>50MB)分片上传 */
   async function uploadFiles(files: File[]) {
     if (!files.length) return
     isUploading.value = true
     uploadProgress.value = 0
 
-    const totalSize = files.reduce((s, f) => s + f.size, 0)
-    const hasLargeFile = files.some(f => f.size > CHUNK_SIZE * 2)
-
     try {
-      // 如果草稿中有 folderId，使用去重上传（跳过已存在文件）
-      if (folderId.value) {
-        await uploadWithDedup(files, folderId.value)
-      } else if (hasLargeFile) {
-        await uploadChunked(files, totalSize)
-      } else {
-        await uploadDirect(files)
+      // 分离大文件和小文件
+      const smallFiles = files.filter(f => f.size <= LARGE_FILE_THRESHOLD)
+      const largeFiles = files.filter(f => f.size > LARGE_FILE_THRESHOLD)
+      const totalSize = files.reduce((s, f) => s + f.size, 0)
+      let uploadedSize = 0
+
+      // 1. 先直传所有小文件（一次性）
+      if (smallFiles.length > 0) {
+        if (folderId.value) {
+          await uploadWithDedup(smallFiles, folderId.value)
+        } else {
+          await uploadDirect(smallFiles)
+        }
+        uploadedSize = smallFiles.reduce((s, f) => s + f.size, 0)
+        uploadProgress.value = Math.round((uploadedSize / totalSize) * 100)
       }
+
+      // 2. 逐个分片上传大文件
+      for (const file of largeFiles) {
+        await uploadSingleLargeFile(file, uploadedSize, totalSize)
+        uploadedSize += file.size
+      }
+
+      uploadProgress.value = 100
       saveDraft()
     } finally {
       isUploading.value = false
@@ -106,57 +120,55 @@ export const usePipelineStore = defineStore('pipeline', () => {
     uploadProgress.value = 100
   }
 
-  /** 分片上传（大文件，支持断点续传） */
-  async function uploadChunked(files: File[], totalSize: number) {
-    let uploaded = 0
-    for (const file of files) {
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+  /** 分片上传单个大文件（>50MB） */
+  async function uploadSingleLargeFile(file: File, baseUploaded: number, totalSize: number) {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
-      // 初始化分片会话（用 query params，不用 JSON body）
-      const initRes = await http.post('/pipeline/upload/init', null, {
-        params: {
-          filename: file.name,
-          total_size: file.size,
-          total_chunks: totalChunks,
-          folder_id: folderId.value || '',
-        },
-      })
-      const init = initRes.data?.data ?? initRes.data
-      const uploadId = init.upload_id
-      if (!folderId.value) folderId.value = init.folder_id
+    // 初始化分片会话
+    const initRes = await http.post('/pipeline/upload/init', null, {
+      params: {
+        filename: file.name,
+        total_size: file.size,
+        total_chunks: totalChunks,
+        folder_id: folderId.value || '',
+      },
+    })
+    const init = initRes.data?.data ?? initRes.data
+    const uploadId = init.upload_id
+    if (!folderId.value) folderId.value = init.folder_id
 
-      // 查询已上传的分片（断点续传）
-      const existingChunks = new Set<number>(init.uploaded_chunks || [])
+    // 查询已上传的分片（断点续传）
+    const existingChunks = new Set<number>(init.uploaded_chunks || [])
+    let fileUploaded = 0
 
-      // 逐片上传
-      for (let i = 0; i < totalChunks; i++) {
-        if (existingChunks.has(i)) {
-          uploaded += Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE)
-          continue
-        }
-        const start = i * CHUNK_SIZE
-        const end = Math.min(start + CHUNK_SIZE, file.size)
-        const blob = file.slice(start, end)
-        const chunkForm = new FormData()
-        chunkForm.append('chunk', blob, `chunk_${i}`)
-
-        await http.post(`/pipeline/upload/chunk`, chunkForm, {
-          headers: { 'Content-Type': undefined },
-          params: { upload_id: uploadId, chunk_index: i },
-        })
-        uploaded += (end - start)
-        uploadProgress.value = Math.round((uploaded / totalSize) * 100)
+    // 逐片上传
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkSize = Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE)
+      if (existingChunks.has(i)) {
+        fileUploaded += chunkSize
+        continue
       }
+      const start = i * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, file.size)
+      const blob = file.slice(start, end)
+      const chunkForm = new FormData()
+      chunkForm.append('chunk', blob, `chunk_${i}`)
 
-      // 合并分片
-      const completeRes = await http.post('/pipeline/upload/complete', null, {
-        params: { upload_id: uploadId },
+      await http.post('/pipeline/upload/chunk', chunkForm, {
+        headers: { 'Content-Type': undefined },
+        params: { upload_id: uploadId, chunk_index: i },
       })
-      const completeData = completeRes.data?.data ?? completeRes.data
-      folderPath.value = completeData.folder_path || folderPath.value
-      fileManifest.value = completeData.file_manifest || fileManifest.value
+      fileUploaded += chunkSize
+      uploadProgress.value = Math.round(((baseUploaded + fileUploaded) / totalSize) * 100)
     }
-    uploadProgress.value = 100
+
+    // 合并分片
+    const completeRes = await http.post('/pipeline/upload/complete', null, {
+      params: { upload_id: uploadId },
+    })
+    const completeData = completeRes.data?.data ?? completeRes.data
+    folderPath.value = completeData.folder_path || folderPath.value
+    fileManifest.value = completeData.file_manifest || fileManifest.value
   }
 
   /** 保存草稿到 localStorage */
