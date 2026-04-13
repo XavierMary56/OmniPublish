@@ -368,11 +368,42 @@ export const usePipelineStore = defineStore('pipeline', () => {
     folderPath.value = data.folder_path
     selectedPlatforms.value = data.target_platforms || []
     fileManifest.value = data.file_manifest || { images: [], videos: [], txts: [] }
+
+    // 文案结果：优先用已确认的，否则从 step data 中取生成结果
     if (data.confirmed_title) {
       copyResult.value = { title: data.confirmed_title, keywords: data.confirmed_keywords, body: data.confirmed_body }
+    } else {
+      // 从 step 1 的 data 中取 AI 生成的结果（可能是 JSON 字符串）
+      const steps = data.steps || []
+      const step1 = steps.find((s: any) => s.step === 1)
+      if (step1?.data) {
+        let stepData = step1.data
+        // 如果是 JSON 字符串，解析它
+        if (typeof stepData === 'string') {
+          try { stepData = JSON.parse(stepData) } catch {}
+        }
+        if (stepData && typeof stepData === 'object' && stepData.title) {
+          copyResult.value = { title: stepData.title, keywords: stepData.keywords || '', body: stepData.body || '' }
+        }
+      }
     }
+
     renamePrefix.value = data.rename_prefix || ''
-    coverCandidates.value = data.cover_candidates || []
+
+    // 封面候选：从 step 3 data 中获取
+    if (data.cover_candidates) {
+      coverCandidates.value = data.cover_candidates
+    } else {
+      const steps = data.steps || []
+      const step3 = steps.find((s: any) => s.step === 3)
+      if (step3?.data) {
+        let stepData = step3.data
+        if (typeof stepData === 'string') {
+          try { stepData = JSON.parse(stepData) } catch {}
+        }
+        if (stepData?.candidates) coverCandidates.value = stepData.candidates
+      }
+    }
 
     // 加载平台子任务状态
     for (const pt of (data.platform_tasks || [])) {
@@ -403,11 +434,18 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (!taskId.value) return
       try {
         const data = await api('GET', `/pipeline/${taskId.value}`)
-        const step2 = (data.steps || [])[1]
-        if (step2 && (step2.status === 'awaiting_confirm' || step2.status === 'failed')) {
+        const step1 = (data.steps || []).find((s: any) => s.step === 1)
+        if (step1 && (step1.status === 'awaiting_confirm' || step1.status === 'failed')) {
           isGenerating.value = false
-          if (step2.status === 'awaiting_confirm' && step2.data) {
-            copyResult.value = step2.data
+          if (step1.status === 'awaiting_confirm' && step1.data) {
+            // step.data 可能是 JSON 字符串，需要解析
+            let stepData = step1.data
+            if (typeof stepData === 'string') {
+              try { stepData = JSON.parse(stepData) } catch {}
+            }
+            if (stepData && typeof stepData === 'object' && stepData.title) {
+              copyResult.value = { title: stepData.title, keywords: stepData.keywords || '', body: stepData.body || '' }
+            }
           }
           // 重新加载完整任务数据
           await loadTask(taskId.value!)
@@ -443,7 +481,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
   /** 生成封面 */
   async function generateCover(layout: string, candidates: number) {
     if (!taskId.value) return
-    await api('POST', `/pipeline/${taskId.value}/step/4/generate`, null, )
+    await api('POST', `/pipeline/${taskId.value}/step/4/generate`, { layout, candidates })
   }
 
   /** 确认封面 */

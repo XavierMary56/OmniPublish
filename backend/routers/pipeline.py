@@ -630,14 +630,20 @@ async def confirm_rename(task_id: int, req: ConfirmRenameRequest,
 # Step 4: 封面制作
 # ══════════════════════════════════════════
 
+class GenerateCoverRequest(BaseModel):
+    layout: str = "triple"
+    candidates: int = 3
+
 @router.post("/{task_id}/step/4/generate")
-async def generate_cover(task_id: int, layout: str = "triple", candidates: int = 3,
+async def generate_cover(task_id: int, req: GenerateCoverRequest = None,
                          bg: BackgroundTasks = None, user: UserInfo = Depends(get_current_user)):
     """生成候选封面。"""
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
+    layout = req.layout if req else "triple"
+    candidates = req.candidates if req else 3
     bg.add_task(cover_service.generate_candidates, task_id, task["folder_path"], layout, candidates)
     return ApiResponse.success(message="封面生成已启动")
 

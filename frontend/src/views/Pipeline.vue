@@ -283,8 +283,39 @@ async function handleConfirmRename() {
   await store.confirmRename(prefix.value, startNum.value, 2, separator.value)
 }
 
+const isGeneratingCover = ref(false)
+let coverPollTimer: number | null = null
+
 async function handleGenerateCover() {
-  await store.generateCover(coverLayout.value, 3)
+  isGeneratingCover.value = true
+  store.coverCandidates = []
+  try {
+    await store.generateCover(coverLayout.value, 3)
+    // 轮询等待封面生成完成
+    if (coverPollTimer) clearInterval(coverPollTimer)
+    coverPollTimer = window.setInterval(async () => {
+      if (!store.taskId) return
+      try {
+        const data = await api('GET', `/pipeline/${store.taskId}`)
+        const step3 = (data.steps || []).find((s: any) => s.step === 3)
+        if (step3 && (step3.status === 'awaiting_confirm' || step3.status === 'done')) {
+          isGeneratingCover.value = false
+          let stepData = step3.data
+          if (typeof stepData === 'string') try { stepData = JSON.parse(stepData) } catch {}
+          if (stepData?.candidates) store.coverCandidates = stepData.candidates
+          await store.loadTask(store.taskId!)
+          if (coverPollTimer) { clearInterval(coverPollTimer); coverPollTimer = null }
+        } else if (step3?.status === 'failed') {
+          isGeneratingCover.value = false
+          alert('封面生成失败: ' + (step3.error || '未知错误'))
+          if (coverPollTimer) { clearInterval(coverPollTimer); coverPollTimer = null }
+        }
+      } catch {}
+    }, 3000)
+  } catch (e: any) {
+    isGeneratingCover.value = false
+    alert(e.response?.data?.detail || '封面生成失败')
+  }
 }
 
 async function handleConfirmCover() {
@@ -675,7 +706,9 @@ function handleDiscardDraft() {
               <select v-model="coverLayout" class="form-select"><option value="triple">三拼</option><option value="single">单图</option><option value="double">双拼</option><option value="wide">宽屏</option><option value="portrait">竖版</option></select>
             </div>
           </div>
-          <button class="btn btn-primary" style="margin-bottom:14px" @click="handleGenerateCover">🖼️ 生成封面候选</button>
+          <button class="btn btn-primary" style="margin-bottom:14px" :disabled="isGeneratingCover" @click="handleGenerateCover">
+            {{ isGeneratingCover ? '⏳ 生成中...' : '🖼️ 生成封面候选' }}
+          </button>
           <div v-if="store.coverCandidates.length" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
             <div v-for="(c, i) in store.coverCandidates" :key="i"
                  style="border-radius:8px;overflow:hidden;cursor:pointer;position:relative;background:var(--bg3)"
