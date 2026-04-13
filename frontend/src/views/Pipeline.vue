@@ -59,6 +59,15 @@ const startNum = ref(1)
 const separator = ref('_')
 
 // Step 4 state
+const customCategory = ref('')
+function addCustomCategory() {
+  const c = customCategory.value.trim()
+  if (c && !copyForm.value.categories.includes(c)) {
+    copyForm.value.categories.push(c)
+  }
+  customCategory.value = ''
+}
+
 const coverLayout = ref('triple')
 const coverSize = ref('1300x640')
 const coverHeadroom = ref(15)
@@ -320,24 +329,37 @@ async function handleGenerateCover() {
   }
 }
 
-async function onManualCoverSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files?.length || !store.taskId) return
-  const formData = new FormData()
-  formData.append('cover', input.files[0])
+const showImagePicker = ref(false)
+const pickerSelectedImages = ref<string[]>([])
+
+function openImagePicker() {
+  pickerSelectedImages.value = []
+  showImagePicker.value = true
+}
+
+function togglePickerImage(img: string) {
+  const idx = pickerSelectedImages.value.indexOf(img)
+  if (idx >= 0) pickerSelectedImages.value.splice(idx, 1)
+  else pickerSelectedImages.value.push(img)
+}
+
+async function confirmPickerImages() {
+  if (!pickerSelectedImages.value.length || !store.taskId) return
+  // 用选中的图片生成封面
   try {
-    const res = await http.post(`/pipeline/${store.taskId}/step/4/upload-cover`, formData, {
-      headers: { 'Content-Type': undefined },
+    await api('POST', `/pipeline/${store.taskId}/step/4/generate`, {
+      layout: coverLayout.value,
+      candidates: 1,
+      head_margin: coverHeadroom.value,
+      selected_images: pickerSelectedImages.value,
     })
-    const data = res.data?.data ?? res.data
-    if (data.cover_path) {
-      store.coverCandidates = [data.cover_path]
-      store.selectedCover = 0
-    }
-  } catch (err: any) {
-    alert(err.response?.data?.detail || '上传失败')
+    showImagePicker.value = false
+    isGeneratingCover.value = true
+    // 复用封面轮询
+    handleGenerateCover()
+  } catch (e: any) {
+    alert(e.response?.data?.detail || '生成失败')
   }
-  input.value = ''
 }
 
 async function handleConfirmCover() {
@@ -650,16 +672,30 @@ function handleDiscardDraft() {
                 </div>
                 <div class="form-group" style="flex:1"><label>作者</label><input v-model="copyForm.author" class="form-input" /></div>
               </div>
-              <div v-if="store.dynamicCategories.length" class="form-group" style="margin-bottom:14px">
-                <label>分类（已从选中平台加载 {{ store.dynamicCategories.length }} 个）</label>
-                <div style="display:flex;flex-wrap:wrap;gap:4px">
-                  <span v-for="c in store.dynamicCategories" :key="c"
-                        style="padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;transition:.15s"
-                        :style="copyForm.categories.includes(c) ? {background:'var(--primary-dim)',color:'var(--primary)',border:'1px solid var(--primary)'} : {background:'var(--bg4)',color:'var(--t2)',border:'1px solid var(--bd)'}"
-                        @click="copyForm.categories.includes(c) ? copyForm.categories.splice(copyForm.categories.indexOf(c),1) : copyForm.categories.push(c)">
-                    {{ c }}
+              <div class="form-group" style="margin-bottom:14px">
+                <label>分类 <span v-if="store.dynamicCategories.length" style="font-size:10px;color:var(--t3)">(已从 {{ store.selectedPlatforms.length }} 个平台加载分类库)</span></label>
+                <!-- 已选分类标签 -->
+                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+                  <span v-for="c in copyForm.categories" :key="c"
+                        style="padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;background:var(--primary-dim);color:var(--primary);border:1px solid var(--primary);display:flex;align-items:center;gap:4px"
+                        @click="copyForm.categories.splice(copyForm.categories.indexOf(c), 1)">
+                    {{ c }} <span style="font-size:13px">×</span>
                   </span>
                 </div>
+                <!-- 平台分类库（点击添加） -->
+                <div v-if="store.dynamicCategories.length" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+                  <span v-for="c in store.dynamicCategories.filter(c => !copyForm.categories.includes(c))" :key="c"
+                        style="padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;background:var(--bg4);color:var(--t2);border:1px solid var(--bd);transition:.15s"
+                        @click="copyForm.categories.push(c)">
+                    + {{ c }}
+                  </span>
+                </div>
+                <!-- 自定义输入 -->
+                <div style="display:flex;gap:6px">
+                  <input v-model="customCategory" class="form-input" style="flex:1" placeholder="输入分类后回车添加..."
+                         @keydown.enter.prevent="addCustomCategory" />
+                </div>
+                <div v-if="store.dynamicCategories.length" class="form-hint">已合并 {{ store.selectedPlatforms.length }} 个平台的分类库（并集），发布时各平台只使用自己支持的分类</div>
               </div>
               <button class="btn btn-primary"
                       :disabled="store.isGenerating || !copyForm.protagonist.trim() || !copyForm.event.trim()"
@@ -770,10 +806,39 @@ function handleDiscardDraft() {
           <div style="margin-top:14px;display:flex;gap:8px">
             <button class="btn btn-green" :disabled="!store.coverCandidates.length" @click="handleConfirmCover">✅ 使用选中封面，下一步 →</button>
             <button class="btn btn-ghost" :disabled="isGeneratingCover" @click="handleGenerateCover">🔄 重新生成</button>
-            <label class="btn btn-ghost" style="cursor:pointer">
-              📁 手动选图
-              <input type="file" accept="image/*" style="display:none" @change="onManualCoverSelect" />
-            </label>
+            <button class="btn btn-ghost" @click="openImagePicker">📁 手动选图</button>
+          </div>
+
+          <!-- 手动选图弹窗 — 从已上传素材中选择 -->
+          <div v-if="showImagePicker" class="modal-overlay" @click.self="showImagePicker = false">
+            <div class="modal" style="max-width:700px">
+              <div class="modal-head">
+                <div class="modal-title">📁 从素材图片中选择</div>
+                <button style="background:none;border:none;color:var(--t2);font-size:24px;cursor:pointer" @click="showImagePicker = false">&times;</button>
+              </div>
+              <div class="modal-body">
+                <p style="font-size:12px;color:var(--t2);margin-bottom:12px">选择图片后将使用选中的图片生成封面（选 1 张 = 单图，选 2 张 = 双拼，选 3 张 = 三拼）</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">
+                  <div v-for="img in store.fileManifest.images" :key="img"
+                       style="border-radius:6px;overflow:hidden;cursor:pointer;position:relative"
+                       :style="{border: pickerSelectedImages.includes(img) ? '2px solid var(--primary)' : '2px solid var(--bd)'}"
+                       @click="togglePickerImage(img)">
+                    <img :src="coverUrl(store.folderPath + '/' + img)" style="width:100%;height:80px;object-fit:cover;display:block"
+                         @error="($event.target as HTMLImageElement).style.display='none'" />
+                    <div style="font-size:9px;padding:2px 4px;color:var(--t3);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ img }}</div>
+                    <div v-if="pickerSelectedImages.includes(img)"
+                         style="position:absolute;top:2px;right:2px;background:var(--primary);color:#000;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">
+                      {{ pickerSelectedImages.indexOf(img) + 1 }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <span style="font-size:12px;color:var(--t2);margin-right:auto">已选 {{ pickerSelectedImages.length }} 张</span>
+                <button class="btn btn-ghost" @click="showImagePicker = false">取消</button>
+                <button class="btn btn-primary" :disabled="!pickerSelectedImages.length" @click="confirmPickerImages">生成封面</button>
+              </div>
+            </div>
           </div>
         </div>
 
