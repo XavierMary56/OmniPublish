@@ -31,6 +31,19 @@ UPLOAD_ROOT = os.path.join(BACKEND_DIR, "uploads", "tasks")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 
+def _safe_folder_id(folder_id: str) -> str:
+    """校验 folder_id 防止路径穿越攻击。"""
+    # 只允许字母数字、下划线、短横线
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', folder_id):
+        raise HTTPException(status_code=400, detail="非法的 folder_id")
+    # 二次确认：拼接后路径必须在 UPLOAD_ROOT 内
+    resolved = os.path.realpath(os.path.join(UPLOAD_ROOT, folder_id))
+    if not resolved.startswith(os.path.realpath(UPLOAD_ROOT)):
+        raise HTTPException(status_code=400, detail="非法的 folder_id")
+    return folder_id
+
+
 # ══════════════════════════════════════════
 # 获取下一个任务编号（预估）
 # ══════════════════════════════════════════
@@ -146,6 +159,7 @@ async def copy_large_files_from_existing(
 ):
     """在服务器已有上传目录中搜索同名文件，复制到目标文件夹。
     解决大视频通过 HTTP 上传不稳定的问题。"""
+    _safe_folder_id(folder_id)
     target_dir = os.path.join(UPLOAD_ROOT, folder_id)
     if not os.path.isdir(target_dir):
         raise HTTPException(status_code=400, detail=f"目标文件夹不存在: {folder_id}")
@@ -207,6 +221,7 @@ async def check_uploaded_folder(
 ):
     """检查已上传的素材文件夹是否还在，返回文件清单。
     用于草稿恢复时跳过重复上传。"""
+    _safe_folder_id(folder_id)
     folder_path = os.path.join(UPLOAD_ROOT, folder_id)
     if not os.path.isdir(folder_path):
         return ApiResponse.success(data={"exists": False, "folder_id": folder_id})
@@ -231,6 +246,7 @@ async def upload_with_dedup(
     """上传素材，跳过已存在的同名同大小文件。"""
     if not folder_id:
         folder_id = uuid.uuid4().hex[:12]
+    _safe_folder_id(folder_id)
     folder_path = os.path.join(UPLOAD_ROOT, folder_id)
     os.makedirs(folder_path, exist_ok=True)
 

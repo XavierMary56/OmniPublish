@@ -45,6 +45,9 @@ class ToolJob:
 class ToolsService:
     """工具箱服务管理器。"""
 
+    # 已完成的 job 保留 1 小时，超时自动清除
+    JOB_TTL_SECONDS = 3600
+
     def __init__(self):
         self._jobs: dict[str, ToolJob] = {}
         # 只保留最近 100 个 job，避免内存膨胀
@@ -56,12 +59,24 @@ class ToolsService:
     def _register(self, tool: str, params: dict) -> ToolJob:
         job = ToolJob(tool, params)
         self._jobs[job.id] = job
-        # 清理旧 job
+        # 先清理过期的已完成 job（TTL 清理）
+        self._cleanup_expired()
+        # 再检查数量上限
         if len(self._jobs) > self._max_jobs:
             oldest = sorted(self._jobs.values(), key=lambda j: j.created_at)
             for j in oldest[:len(self._jobs) - self._max_jobs]:
                 del self._jobs[j.id]
         return job
+
+    def _cleanup_expired(self):
+        """清理已完成且超过 TTL 的 job。"""
+        now = time.time()
+        expired = [
+            jid for jid, j in self._jobs.items()
+            if j.finished_at and (now - j.finished_at) > self.JOB_TTL_SECONDS
+        ]
+        for jid in expired:
+            del self._jobs[jid]
 
     # ════════════════════════════════════════
     # 视频工具
@@ -73,28 +88,30 @@ class ToolsService:
         extra = {}
         if coords:
             extra = {k: v for k, v in coords.items() if v}
-        job = self._register("delogo", {**locals(), **extra})
+        params = {k: v for k, v in locals().items() if k != 'self'}
+        params.update(extra)
+        job = self._register("delogo", params)
         asyncio.create_task(self._run_video_cmd(job, "delogo", input_dir, output_dir, orient=orient, codec=codec, bitrate=bitrate, **extra))
         return job.id
 
     async def crop(self, input_dir: str, output_dir: str = "", orient: str = "auto",
                    codec: str = "libx264", bitrate: str = "2M") -> str:
         """裁掉四角水印。"""
-        job = self._register("crop", locals())
+        job = self._register("crop", {k: v for k, v in locals().items() if k != 'self'})
         asyncio.create_task(self._run_video_cmd(job, "crop", input_dir, output_dir, orient=orient, codec=codec, bitrate=bitrate))
         return job.id
 
     async def blur_pad(self, input_dir: str, output_dir: str = "", orient: str = "auto",
                        strength: str = "5:1", codec: str = "libx264", bitrate: str = "2M") -> str:
         """虚化填充。"""
-        job = self._register("blur_pad", locals())
+        job = self._register("blur_pad", {k: v for k, v in locals().items() if k != 'self'})
         asyncio.create_task(self._run_video_cmd(job, "blur-pad", input_dir, output_dir, orient=orient, codec=codec, bitrate=bitrate, strength=strength))
         return job.id
 
     async def trim(self, input_dir: str, output_dir: str = "", start_sec: int = 0,
                    end_sec: int = 11, mode: str = "copy", codec: str = "libx264", bitrate: str = "2M") -> str:
         """裁掉片头片尾。"""
-        job = self._register("trim", locals())
+        job = self._register("trim", {k: v for k, v in locals().items() if k != 'self'})
         asyncio.create_task(self._run_video_cmd(job, "trim", input_dir, output_dir,
                                                  codec=codec, bitrate=bitrate, start=start_sec, end=end_sec, mode=mode))
         return job.id
@@ -103,7 +120,7 @@ class ToolsService:
                                intro: str = "", outro: str = "",
                                codec: str = "libx264", bitrate: str = "2M") -> str:
         """加片头片尾。"""
-        job = self._register("intro_outro", locals())
+        job = self._register("intro_outro", {k: v for k, v in locals().items() if k != 'self'})
         asyncio.create_task(self._run_video_cmd(job, "add-intro-outro", input_dir, output_dir,
                                                  codec=codec, bitrate=bitrate, intro=intro, outro=outro))
         return job.id
@@ -111,7 +128,7 @@ class ToolsService:
     async def concat(self, input_dir: str, output_path: str = "",
                      method: str = "demuxer", scale: str = "first") -> str:
         """多视频合成。"""
-        job = self._register("concat", locals())
+        job = self._register("concat", {k: v for k, v in locals().items() if k != 'self'})
         asyncio.create_task(self._run_video_cmd(job, "concat", input_dir, output_path,
                                                  method=method, scale=scale))
         return job.id
@@ -119,7 +136,7 @@ class ToolsService:
     async def compress(self, input_dir: str, output_dir: str = "",
                        target_size_mb: int = 100, codec: str = "libx264") -> str:
         """视频压缩。"""
-        job = self._register("compress", locals())
+        job = self._register("compress", {k: v for k, v in locals().items() if k != 'self'})
 
         async def _run():
             job.status = "running"

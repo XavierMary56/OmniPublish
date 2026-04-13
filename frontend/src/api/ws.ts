@@ -7,15 +7,23 @@ export class OmniWs {
   private handlers: Map<string, WsHandler[]> = new Map()
   private url: string
   private reconnectTimer: number | null = null
+  private reconnectAttempts = 0
+  private maxReconnectDelay = 30000 // 最大 30 秒
 
   constructor(url: string) {
     this.url = url
   }
 
-  connect() {
+  connect(token?: string) {
     if (this.ws && this.ws.readyState <= 1) return
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    this.ws = new WebSocket(`${protocol}//${location.host}${this.url}`)
+    // 附加 token 到 URL query 参数进行认证
+    const sep = this.url.includes('?') ? '&' : '?'
+    const authUrl = token ? `${this.url}${sep}token=${encodeURIComponent(token)}` : this.url
+    this.ws = new WebSocket(`${protocol}//${location.host}${authUrl}`)
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0 // 连接成功，重置退避计数
+    }
     this.ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data)
@@ -28,7 +36,10 @@ export class OmniWs {
       } catch {}
     }
     this.ws.onclose = () => {
-      this.reconnectTimer = window.setTimeout(() => this.connect(), 3000)
+      // 指数退避重连: 3s, 6s, 12s, 24s, 30s(cap)
+      this.reconnectAttempts++
+      const delay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay)
+      this.reconnectTimer = window.setTimeout(() => this.connect(token), delay)
     }
     this.ws.onerror = () => this.ws?.close()
   }
@@ -47,6 +58,7 @@ export class OmniWs {
 
   disconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectAttempts = 0
     this.ws?.close()
     this.ws = null
     this.handlers.clear()

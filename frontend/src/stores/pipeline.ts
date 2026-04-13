@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import http, { api } from '../api/http'
 import { createTaskWs, type OmniWs } from '../api/ws'
+import { useAuthStore } from './auth'
 
 export const usePipelineStore = defineStore('pipeline', () => {
   // 任务基础信息
@@ -69,8 +70,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
           }
         } catch (e: any) {
           // 直传失败（可能是大视频超时），尝试只传小文件
-          const smallOnly = normalFiles.filter(f => f.size <= 50 * 1024 * 1024)
-          const failedLarge = normalFiles.filter(f => f.size > 50 * 1024 * 1024)
+          const smallOnly = normalFiles.filter(f => f.size <= LARGE_FILE_THRESHOLD)
+          const failedLarge = normalFiles.filter(f => f.size > LARGE_FILE_THRESHOLD)
           if (smallOnly.length > 0) {
             if (folderId.value) {
               await uploadWithDedup(smallOnly, folderId.value)
@@ -82,9 +83,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
           if (failedLarge.length > 0 && folderId.value) {
             const names = failedLarge.map(f => f.name)
             try {
-              const copyResult = await api('POST', '/pipeline/upload/copy-large-files', null, )
-              // 用 query params 传
-              await http.post(`/pipeline/upload/copy-large-files?folder_id=${folderId.value}`, names, )
+              await http.post(`/pipeline/upload/copy-large-files?folder_id=${folderId.value}`, names)
             } catch { /* 复制也失败，忽略 */ }
           }
           // 重新扫描文件夹获取最新 manifest
@@ -423,13 +422,17 @@ export const usePipelineStore = defineStore('pipeline', () => {
   /** AI 文案生成 */
   let generatePollTimer: number | null = null
 
+  function clearGeneratePollTimer() {
+    if (generatePollTimer) { clearInterval(generatePollTimer); generatePollTimer = null }
+  }
+
   async function generateCopy(params: Record<string, any>) {
     if (!taskId.value) return
     isGenerating.value = true
     await api('POST', `/pipeline/${taskId.value}/step/2/generate`, params)
 
     // 轮询备用方案（WebSocket 可能不稳定）
-    if (generatePollTimer) clearInterval(generatePollTimer)
+    clearGeneratePollTimer()
     generatePollTimer = window.setInterval(async () => {
       if (!taskId.value) return
       try {
@@ -449,7 +452,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
           }
           // 重新加载完整任务数据
           await loadTask(taskId.value!)
-          if (generatePollTimer) { clearInterval(generatePollTimer); generatePollTimer = null }
+          clearGeneratePollTimer()
         }
       } catch {}
     }, 3000)
@@ -532,13 +535,20 @@ export const usePipelineStore = defineStore('pipeline', () => {
         }
       }
     })
-    ws.connect()
+    // 传递 JWT token 进行 WebSocket 认证
+    const authStore = useAuthStore()
+    ws.connect(authStore.token || undefined)
   }
 
   /** 清理 */
-  function reset() {
+  function cleanup() {
+    clearGeneratePollTimer()
     ws?.disconnect()
     ws = null
+  }
+
+  function reset() {
+    cleanup()
     taskId.value = null
     taskNo.value = ''
     currentStep.value = 0
@@ -571,6 +581,6 @@ export const usePipelineStore = defineStore('pipeline', () => {
     generateCover, confirmCover,
     confirmWatermark, publish,
     saveDraft, loadDraft, clearDraft,
-    reset,
+    cleanup, reset,
   }
 })

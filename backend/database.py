@@ -1,6 +1,7 @@
 """OmniPublish V2.0 — PostgreSQL 数据库管理（asyncpg 连接池）"""
 
 import asyncpg
+import asyncio
 import json
 import os
 from typing import Optional
@@ -12,6 +13,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", settings.database_url)
 
 # 全局连接池
 _pool: Optional[asyncpg.Pool] = None
+_pool_lock = asyncio.Lock()
 
 
 # ══════════════════════════════════════
@@ -180,13 +182,17 @@ DEFAULT_ADMIN_SQL = """
 async def get_pool() -> asyncpg.Pool:
     """获取全局连接池。"""
     global _pool
-    if _pool is None:
-        _pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            min_size=2,
-            max_size=20,
-            command_timeout=60,
-        )
+    if _pool is not None:
+        return _pool
+    async with _pool_lock:
+        # double-check after acquiring lock
+        if _pool is None:
+            _pool = await asyncpg.create_pool(
+                DATABASE_URL,
+                min_size=2,
+                max_size=20,
+                command_timeout=60,
+            )
     return _pool
 
 

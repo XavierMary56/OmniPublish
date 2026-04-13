@@ -151,7 +151,7 @@ class PublishService:
             layout_template = pt.get("layout_template", "")
 
             # 确定素材目录（水印处理后的目录优先）
-            wm_folder = pt.get("wm_output_dir", "")
+            wm_folder = pt.get("wm_images_dir", "")
             src_folder = wm_folder if wm_folder and os.path.isdir(wm_folder) else folder_path
 
             if not src_folder or not os.path.isdir(src_folder):

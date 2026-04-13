@@ -146,7 +146,7 @@ class PipelineService:
 
             param_idx += 1
             set_parts.append(f"updated_at = ${param_idx}")
-            params.append(datetime.now().isoformat())
+            params.append(datetime.now())
 
             param_idx += 1
             task_id_param = param_idx

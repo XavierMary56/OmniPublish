@@ -1,19 +1,10 @@
-# ═══ Stage 1: 构建前端 ═══
-FROM node:18-slim AS frontend-builder
-WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install --production=false
-COPY frontend/ ./
-# 跳过 vue-tsc 类型检查，直接 vite build（确保快速构建）
-RUN npx vite build
-
-# ═══ Stage 2: Python 后端 ═══
+# OmniPublish v2.0 — 轻量容器化 (Mac版直接打包)
 FROM python:3.11-slim
 
-# 设置 UTF-8 locale（修复中文文件名）
+# UTF-8 locale (修复中文文件名)
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PYTHONIOENCODING=utf-8
 
-# 安装系统依赖
+# 系统依赖: ffmpeg + OpenCV 运行时
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgl1 \
@@ -28,25 +19,21 @@ ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 WORKDIR /app
 
 # Python 依赖
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制后端代码
-COPY backend/ ./backend/
-COPY config.json ./
+# 复制全部文件
+COPY server.py .
+COPY OmniPublish_v2.html .
+COPY config.json .
+COPY yolov8n.pt .
+COPY scripts/ ./scripts/
 
-# 复制前端构建产物
-COPY --from=frontend-builder /build/dist ./frontend/dist/
+# 创建运行时目录
+RUN mkdir -p uploads tmp
 
-# 创建数据目录
-RUN mkdir -p data backend/uploads/watermarks
-
-# 环境变量
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/backend
 
 EXPOSE 9527
 
-# 启动时初始化数据库 + 种子数据 + 启动服务
-CMD python backend/migrations/002_seed_platforms.py && \
-    python backend/main.py --host 0.0.0.0 --port 9527
+CMD ["python", "server.py", "--port", "9527"]

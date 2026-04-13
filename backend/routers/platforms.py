@@ -15,6 +15,7 @@ from config import UPLOADS_DIR
 router = APIRouter(prefix="/api/platforms", tags=["业务线管理"])
 
 WM_DIR = UPLOADS_DIR / "watermarks"
+WM_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.get("")
@@ -113,6 +114,8 @@ async def delete_platform(platform_id: int):
 @router.post("/{platform_id}/watermark/image", dependencies=[Depends(require_role(UserRole.ADMIN))])
 async def upload_image_watermark(platform_id: int, file: UploadFile = File(...)):
     """上传图片水印文件。"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
     if not file.filename.lower().endswith((".png", ".jpg", ".jpeg")):
         raise HTTPException(status_code=400, detail="仅支持 PNG/JPG 格式")
 
@@ -144,6 +147,8 @@ async def upload_image_watermark(platform_id: int, file: UploadFile = File(...))
 @router.post("/{platform_id}/watermark/video", dependencies=[Depends(require_role(UserRole.ADMIN))])
 async def upload_video_watermark(platform_id: int, file: UploadFile = File(...)):
     """上传视频水印文件。"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
     if not file.filename.lower().endswith((".mov", ".png", ".mp4")):
         raise HTTPException(status_code=400, detail="仅支持 MOV/PNG/MP4 格式")
 

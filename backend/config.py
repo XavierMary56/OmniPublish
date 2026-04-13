@@ -34,7 +34,7 @@ class CryptoConfig:
 class ServerConfig:
     port: int = 9527
     auth_secret: str = "change-me-in-production"
-    allowed_origins: list = field(default_factory=lambda: ["*"])
+    allowed_origins: list = field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
     token_expire_hours: int = 24
 
 
@@ -123,3 +123,11 @@ def load_config() -> AppConfig:
 
 # 全局单例
 settings = load_config()
+
+# 安全警告
+if settings.server.auth_secret in ("change-me-in-production", ""):
+    import warnings
+    warnings.warn(
+        "\n⚠️  [OmniPublish] auth_secret 使用默认值，生产环境请设置 OMNIPUB_AUTH_SECRET 环境变量！",
+        stacklevel=1,
+    )

@@ -77,10 +77,37 @@ async def list_tasks(
         """
         rows = await conn.fetch(query_sql, *params, limit, offset)
 
+        # 批量加载步骤和平台子任务，避免 N+1 查询
+        task_ids = [row["id"] for row in rows]
+
+        steps_map: dict[int, list] = {}
+        pt_map: dict[int, list] = {}
+
+        if task_ids:
+            # 一次性查询所有任务的步骤状态
+            all_steps = await conn.fetch(
+                "SELECT task_id, step, status FROM task_steps WHERE task_id = ANY($1) ORDER BY step",
+                task_ids,
+            )
+            for s in all_steps:
+                steps_map.setdefault(s["task_id"], []).append({"step": s["step"], "status": s["status"]})
+
+            # 一次性查询所有任务的平台子任务
+            all_pts = await conn.fetch(
+                """SELECT pt.task_id, pt.platform_id, p.name as platform_name,
+                          pt.wm_status, pt.upload_status, pt.publish_status, pt.publish_error
+                   FROM platform_tasks pt
+                   JOIN platforms p ON pt.platform_id = p.id
+                   WHERE pt.task_id = ANY($1)""",
+                task_ids,
+            )
+            for pt in all_pts:
+                pt_map.setdefault(pt["task_id"], []).append(dict(pt))
+
         items = []
         for row in rows:
             item = dict(row)
-            item['created_by'] = item.get('editor_name') or item.get('created_by', '')
+            item['editor_name'] = item.get('editor_name') or ''
             # 解析 JSON 字段
             for field in ["target_platforms", "file_manifest"]:
                 if item.get(field):
@@ -89,23 +116,11 @@ async def list_tasks(
                     except (json.JSONDecodeError, TypeError):
                         pass
 
-            # 加载步骤状态
-            step_rows = await conn.fetch(
-                "SELECT step, status FROM task_steps WHERE task_id = $1 ORDER BY step",
-                item["id"],
-            )
-            item["steps"] = [dict(s) for s in step_rows]
-
-            # 加载平台子任务
-            pt_rows = await conn.fetch(
-                """SELECT pt.platform_id, p.name as platform_name,
-                          pt.wm_status, pt.upload_status, pt.publish_status, pt.publish_error
-                   FROM platform_tasks pt
-                   JOIN platforms p ON pt.platform_id = p.id
-                   WHERE pt.task_id = $1""",
-                item["id"],
-            )
-            item["platform_tasks"] = [dict(pt) for pt in pt_rows]
+            item["steps"] = steps_map.get(item["id"], [])
+            item["platform_tasks"] = [
+                {k: v for k, v in pt.items() if k != "task_id"}
+                for pt in pt_map.get(item["id"], [])
+            ]
 
             items.append(item)
 
@@ -126,6 +141,17 @@ async def get_task_logs(
     """获取任务操作日志。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # 权限检查：编辑只能查看自己的任务日志，组长只能查看本组
+        task_row = await conn.fetchrow("SELECT created_by FROM tasks WHERE id = $1", task_id)
+        if not task_row:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if user.role == UserRole.EDITOR and task_row["created_by"] != user.id:
+            raise HTTPException(status_code=403, detail="无权查看该任务日志")
+        if user.role == UserRole.LEADER:
+            creator = await conn.fetchrow("SELECT dept FROM users WHERE id = $1", task_row["created_by"])
+            if creator and not creator["dept"].startswith(user.dept[:2]):
+                raise HTTPException(status_code=403, detail="无权查看该任务日志")
+
         rows = await conn.fetch(
             """SELECT tl.*, p.name as platform_name
                FROM task_logs tl

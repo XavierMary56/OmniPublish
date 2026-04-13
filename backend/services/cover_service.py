@@ -83,8 +83,8 @@ class CoverService:
             candidates = json.loads(row["cover_candidates"] or "[]")
             if not candidates:
                 raise ValueError("没有可用的封面候选")
-            if cover_index >= len(candidates):
-                raise ValueError(f"封面索引超出范围: {cover_index} >= {len(candidates)}")
+            if cover_index < 0 or cover_index >= len(candidates):
+                raise ValueError(f"封面索引超出范围: {cover_index}，有效范围 0-{len(candidates) - 1}")
 
             cover_path = candidates[cover_index]
             await conn.execute(

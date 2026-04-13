@@ -40,7 +40,7 @@ export async function api<T = any>(method: string, url: string, data?: any): Pro
   const res = method === 'GET'
     ? await http.get(url, { params: data })
     : method === 'DELETE'
-    ? await http.delete(url)
+    ? await http.delete(url, { data })
     : method === 'PUT'
     ? await http.put(url, data)
     : await http.post(url, data)

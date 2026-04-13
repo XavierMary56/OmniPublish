@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePipelineStore } from '../stores/pipeline'
 import { api } from '../api/http'
@@ -169,12 +169,23 @@ function canNext(): boolean {
   return true
 }
 
+// Loading guards for confirm buttons (r2-20 double-click prevention)
+const isSubmitting = ref(false)
+
 async function handleNext() {
-  if (store.currentStep === 0) {
-    await store.createTask(store.folderPath, store.selectedPlatforms)
-    await store.loadCategories()
-    // 自动从 TXT 提取内容填充文案表单
-    autoFillFromTxt()
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    if (store.currentStep === 0) {
+      await store.createTask(store.folderPath, store.selectedPlatforms)
+      await store.loadCategories()
+      // 自动从 TXT 提取内容填充文案表单
+      autoFillFromTxt()
+    }
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '操作失败')
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -286,12 +297,28 @@ async function handleGenerateCopy() {
 }
 
 async function handleConfirmCopy() {
-  await store.confirmCopy(editTitle.value, editKeywords.value, editBody.value, copyForm.value.author, copyForm.value.categories)
-  prefix.value = editTitle.value.slice(0, 20)
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.confirmCopy(editTitle.value, editKeywords.value, editBody.value, copyForm.value.author, copyForm.value.categories)
+    prefix.value = editTitle.value.slice(0, 20)
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '确认文案失败')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 async function handleConfirmRename() {
-  await store.confirmRename(prefix.value, startNum.value, 2, separator.value)
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.confirmRename(prefix.value, startNum.value, 2, separator.value)
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '确认重命名失败')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 const isGeneratingCover = ref(false)
@@ -302,10 +329,12 @@ async function handleGenerateCover() {
   store.coverCandidates = []
   try {
     await store.generateCover(coverLayout.value, 3, coverHeadroom.value)
-    // 轮询等待封面生成完成
+    // WS 的 step_changed 事件会自动触发 loadTask 刷新封面数据
+    // 这里只设置超时保护，不再轮询 API（避免与 WS 推送重复请求）
     if (coverPollTimer) clearInterval(coverPollTimer)
-    coverPollTimer = window.setInterval(async () => {
-      if (!store.taskId) return
+    coverPollTimer = window.setTimeout(async () => {
+      // 60 秒超时保护：如果 WS 没推送结果，回退到一次性 API 查询
+      if (!isGeneratingCover.value) return
       try {
         const data = await api('GET', `/pipeline/${store.taskId}`)
         const step3 = (data.steps || []).find((s: any) => s.step === 3)
@@ -315,14 +344,13 @@ async function handleGenerateCover() {
           if (typeof stepData === 'string') try { stepData = JSON.parse(stepData) } catch {}
           if (stepData?.candidates) store.coverCandidates = stepData.candidates
           await store.loadTask(store.taskId!)
-          if (coverPollTimer) { clearInterval(coverPollTimer); coverPollTimer = null }
         } else if (step3?.status === 'failed') {
           isGeneratingCover.value = false
           alert('封面生成失败: ' + (step3.error || '未知错误'))
-          if (coverPollTimer) { clearInterval(coverPollTimer); coverPollTimer = null }
         }
       } catch {}
-    }, 3000)
+      coverPollTimer = null
+    }, 60000) as unknown as number
   } catch (e: any) {
     isGeneratingCover.value = false
     alert(e.response?.data?.detail || '封面生成失败')
@@ -363,15 +391,39 @@ async function confirmPickerImages() {
 }
 
 async function handleConfirmCover() {
-  await store.confirmCover(store.selectedCover)
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.confirmCover(store.selectedCover)
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '确认封面失败')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 async function handleConfirmWatermark() {
-  await store.confirmWatermark()
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.confirmWatermark()
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '确认水印失败')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 async function handlePublish() {
-  await store.publish()
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.publish()
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '发布失败')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 // 监听文案生成结果
@@ -380,6 +432,14 @@ watch(() => store.copyResult, (r) => {
     editTitle.value = r.title
     editKeywords.value = r.keywords
     editBody.value = r.body
+  }
+})
+
+// 监听封面候选变化 — WS 推送后 store 刷新会触发这里
+watch(() => store.coverCandidates, (candidates) => {
+  if (candidates && candidates.length > 0 && isGeneratingCover.value) {
+    isGeneratingCover.value = false
+    if (coverPollTimer) { clearTimeout(coverPollTimer); coverPollTimer = null }
   }
 })
 
@@ -413,7 +473,7 @@ onMounted(async () => {
     folder.value = store.folderPath
   } else {
     // 尝试恢复草稿
-    if (store.loadDraft()) {
+    if (await store.loadDraft()) {
       hasDraft.value = true
       if (store.copyResult) {
         editTitle.value = store.copyResult.title
@@ -433,6 +493,12 @@ onMounted(async () => {
       } catch {}
     }
   }
+})
+
+onUnmounted(() => {
+  // 清理定时器和 WebSocket 连接
+  if (coverPollTimer) { clearTimeout(coverPollTimer); coverPollTimer = null }
+  store.cleanup()
 })
 
 function handleSaveDraft() {

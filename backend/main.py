@@ -5,13 +5,14 @@ import argparse
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 import json as _json
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +32,7 @@ class UnicodeJSONResponse(JSONResponse):
 from config import settings, ROOT_DIR, BACKEND_DIR, UPLOADS_DIR
 from database import init_db, close_db
 from websocket.manager import ws_manager
+from middleware.auth import decode_token
 
 # ── 路由导入 ──
 from routers import auth, pipeline, tasks, platforms, stats, tools
@@ -53,7 +55,7 @@ async def lifespan(app: FastAPI):
 
 
 async def _daily_cleanup():
-    """每天凌晨 3 点清理过期日志。"""
+    """每天凌晨 3 点清理过期日志和孤立上传文件。"""
     from database import cleanup_old_logs, get_pool
     while True:
         try:
@@ -61,12 +63,43 @@ async def _daily_cleanup():
             pool = await get_pool()
             async with pool.acquire() as conn:
                 deleted = await cleanup_old_logs(conn, days=30)
+                if isinstance(deleted, str):
+                    deleted = int(deleted) if deleted.isdigit() else 0
                 if deleted > 0:
                     print(f"[Cleanup] Deleted {deleted} old log entries")
+
+            # 清理超过 7 天的上传临时文件
+            await _cleanup_stale_uploads(days=7)
+
         except asyncio.CancelledError:
             break
         except Exception as e:
             print(f"[Cleanup] Error: {e}")
+
+
+async def _cleanup_stale_uploads(days: int = 7):
+    """清理 uploads/ 和 tmp/ 下超过 N 天的孤立文件。"""
+    import shutil
+    cutoff = time.time() - days * 86400
+    cleaned = 0
+
+    for dir_path in [UPLOADS_DIR, ROOT_DIR / "tmp"]:
+        if not dir_path.exists():
+            continue
+        for item in dir_path.iterdir():
+            try:
+                mtime = item.stat().st_mtime
+                if mtime < cutoff:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                    cleaned += 1
+            except OSError:
+                continue
+
+    if cleaned > 0:
+        print(f"[Cleanup] Removed {cleaned} stale upload/tmp items (>{days} days)")
 
 
 # ── FastAPI 实例 ──
@@ -99,10 +132,26 @@ app.include_router(tools.router)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
+# ── WebSocket 认证辅助 ──
+async def _ws_authenticate(websocket: WebSocket, token: str = None) -> bool:
+    """验证 WebSocket 连接的 token，失败时关闭连接。"""
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return False
+    try:
+        decode_token(token)
+        return True
+    except Exception:
+        await websocket.close(code=4003, reason="Invalid token")
+        return False
+
+
 # ── WebSocket 端点 ──
 @app.websocket("/ws/pipeline/{task_id}")
-async def ws_pipeline(websocket: WebSocket, task_id: int):
-    """流水线任务实时进度推送。"""
+async def ws_pipeline(websocket: WebSocket, task_id: int, token: str = Query(default=None)):
+    """流水线任务实时进度推送（需要 JWT 认证）。"""
+    if not await _ws_authenticate(websocket, token):
+        return
     await ws_manager.connect_task(task_id, websocket)
     try:
         while True:
@@ -116,8 +165,10 @@ async def ws_pipeline(websocket: WebSocket, task_id: int):
 
 
 @app.websocket("/ws/notifications")
-async def ws_notifications(websocket: WebSocket):
-    """全局通知推送。"""
+async def ws_notifications(websocket: WebSocket, token: str = Query(default=None)):
+    """全局通知推送（需要 JWT 认证）。"""
+    if not await _ws_authenticate(websocket, token):
+        return
     await ws_manager.connect_notifications(websocket)
     try:
         while True:

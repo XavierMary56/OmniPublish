@@ -10,17 +10,15 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
-# Uploads
-backend/uploads/watermarks/*.png
-backend/uploads/watermarks/*.mov
-backend/uploads/watermarks/*.mp4
-backend/uploads/tasks/
+# Uploads & temp
+uploads/
+tmp/
 
 # Config (contains secrets)
 config.json
 !config.json.example
 
-# Node
+# Node (legacy v2 frontend)
 frontend/node_modules/
 frontend/dist/
 
@@ -34,11 +32,9 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
-# YOLOv8 models
+# YOLOv8 models (large binary)
 *.pt
 runs/
-/backend/uploads
-/data
-/backend/uploads/tools
-/backend/uploads/watermarks
-/backend/uploads/tasks
+
+# Legacy backend uploads
+backend/uploads/

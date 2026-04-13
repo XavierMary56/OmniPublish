@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OmniPublish v2.0</title>
+<style>
+:root{
+  --primary:#4fc3f7;--green:#81c784;--orange:#ffb74d;--red:#ef5350;--purple:#b39ddb;--pink:#f06292;
+  --bg0:#080810;--bg1:#0d0d15;--bg2:#13131c;--bg3:#1a1a25;--bg4:#222230;--bd:#2a2a3a;
+  --t1:#f0f0f8;--t2:#9090a8;--t3:#505068;
+  --radius:8px;--sidebar-w:210px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",Roboto,sans-serif;
+  background:var(--bg0);color:var(--t1);display:flex;min-height:100vh;font-size:13px;line-height:1.5}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg1)}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+a{color:var(--primary);text-decoration:none}
+
+/* Sidebar */
+.sidebar{width:var(--sidebar-w);background:var(--bg1);border-right:1px solid var(--bd);
+  display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;overflow-y:auto}
+.sidebar-logo{padding:18px 16px 12px;font-size:15px;font-weight:700;color:var(--primary);
+  border-bottom:1px solid var(--bd);letter-spacing:.5px}
+.sidebar-logo small{display:block;font-size:11px;color:var(--t3);font-weight:400;margin-top:2px}
+.nav-section{padding:10px 0 4px 16px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;
+  color:var(--t2);font-size:12.5px;border-left:3px solid transparent;transition:.15s}
+.nav-item:hover{background:var(--bg3);color:var(--t1)}
+.nav-item.active{color:var(--primary);border-left-color:var(--primary);background:rgba(79,195,247,.06)}
+.nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+
+/* Main */
+.main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-height:100vh}
+.topbar{height:52px;background:var(--bg1);border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.topbar-tag{font-size:11px;padding:3px 10px;border-radius:12px;background:rgba(79,195,247,.12);color:var(--primary)}
+
+.page-container{padding:20px 24px 40px;flex:1;overflow-y:auto}
+.page{display:none}.page.active{display:block}
+
+/* Components */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:8px}
+.section-header h2{font-size:18px;font-weight:700}
+.stat-row{display:flex;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.stat-card{flex:1;min-width:160px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:14px 18px}
+.stat-card .label{font-size:11px;color:var(--t2);margin-bottom:4px}
+.stat-card .value{font-size:22px;font-weight:700}
+.stat-card .value.c-primary{color:var(--primary)}.stat-card .value.c-green{color:var(--green)}
+.stat-card .value.c-orange{color:var(--orange)}.stat-card .value.c-red{color:var(--red)}
+
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px}
+.tool-card{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:18px;
+  cursor:pointer;transition:.2s;display:flex;flex-direction:column;gap:6px}
+.tool-card:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:0 4px 20px rgba(79,195,247,.08)}
+.tool-card .tc-icon{font-size:26px;margin-bottom:4px}
+.tool-card .tc-name{font-size:13px;font-weight:600}
+.tool-card .tc-desc{font-size:11px;color:var(--t2);line-height:1.4}
+
+.panel{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+.panel-title{font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.panel-title .dot{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+.panel-title .dot-green{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.panel-title .dot-orange{width:6px;height:6px;border-radius:50%;background:var(--orange)}
+.panel-row{display:flex;gap:16px;flex-wrap:wrap}
+.panel-col{flex:1;min-width:280px}
+
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:11px;color:var(--t2);margin-bottom:4px;font-weight:500}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--bd);color:var(--t1);
+  padding:7px 10px;border-radius:6px;font-size:12px;font-family:inherit;transition:.15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{
+  border-color:var(--primary);outline:none;box-shadow:0 0 0 2px rgba(79,195,247,.15)}
+.form-group textarea{resize:vertical;min-height:60px}
+.form-group select option{background:var(--bg3)}
+.form-row{display:flex;gap:12px;flex-wrap:wrap}
+.form-row .form-group{flex:1;min-width:140px}
+.form-hint{font-size:10px;color:var(--t3);margin-top:3px}
+.form-check{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12px;cursor:pointer}
+.form-check input[type="checkbox"]{accent-color:var(--primary);width:14px;height:14px}
+.form-radio{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;cursor:pointer}
+.form-radio input[type="radio"]{accent-color:var(--primary);width:14px;height:14px}
+
+.btn{padding:7px 18px;border-radius:6px;border:1px solid transparent;font-size:12px;
+  font-weight:600;cursor:pointer;transition:.15s;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--primary);color:#000}.btn-primary:hover{background:#6dd0ff}
+.btn-ghost{background:transparent;color:var(--t2);border-color:var(--bd)}.btn-ghost:hover{color:var(--t1);border-color:var(--t2)}
+.btn-green{background:var(--green);color:#000}.btn-green:hover{background:#a5d6a7}
+.btn-orange{background:var(--orange);color:#000}.btn-orange:hover{background:#ffcc80}
+.btn-red{background:transparent;color:var(--red);border-color:var(--red)}.btn-red:hover{background:rgba(239,83,80,.1)}
+.btn-sm{padding:4px 12px;font-size:11px}
+.btn-lg{padding:10px 28px;font-size:14px;border-radius:8px}
+.action-bar{display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap}
+
+.output-box{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius);
+  padding:12px 14px;font-family:"SF Mono","Fira Code",monospace;font-size:11.5px;
+  color:var(--t2);min-height:80px;max-height:300px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
+.output-box .log-ok{color:var(--green)}.output-box .log-info{color:var(--primary)}
+.output-box .log-warn{color:var(--orange)}.output-box .log-err{color:var(--red)}
+
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%}
+.badge-primary{background:rgba(79,195,247,.1);color:var(--primary)}.badge-primary::before{background:var(--primary)}
+.badge-green{background:rgba(129,199,132,.1);color:var(--green)}.badge-green::before{background:var(--green)}
+.badge-orange{background:rgba(255,183,77,.1);color:var(--orange)}.badge-orange::before{background:var(--orange)}
+
+/* Drop zone */
+.drop-zone{border:2px dashed var(--bd);border-radius:var(--radius);padding:24px;text-align:center;
+  color:var(--t3);cursor:pointer;transition:.2s;margin-bottom:12px;min-height:80px}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--primary);color:var(--t2);background:rgba(79,195,247,.03)}
+.drop-zone .dz-icon{font-size:28px;margin-bottom:4px}
+.drop-zone .dz-text{font-size:12px}
+
+/* Pipe steps */
+.pipe-steps{display:flex;align-items:center;gap:0;margin:16px 0;flex-wrap:wrap}
+.pipe-step{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--bg3);
+  border:1px solid var(--bd);border-radius:6px;font-size:12px;color:var(--t2);transition:.2s}
+.pipe-step .ps-num{width:20px;height:20px;border-radius:50%;background:var(--bg4);
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.pipe-step.ps-done{border-color:var(--green);color:var(--green)}.pipe-step.ps-done .ps-num{background:var(--green);color:#000}
+.pipe-step.ps-run{border-color:var(--primary);color:var(--primary);animation:pulse 1.5s infinite}
+.pipe-step.ps-run .ps-num{background:var(--primary);color:#000}
+.pipe-step.ps-skip{opacity:.4;text-decoration:line-through}
+.pipe-arrow{color:var(--t3);font-size:14px;margin:0 4px;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+
+/* Layout template editor */
+.tpl-preview{background:var(--bg1);border:1px solid var(--bd);border-radius:6px;padding:12px;
+  font-size:12px;color:var(--t2);line-height:1.7;max-height:240px;overflow-y:auto}
+.tpl-preview .tpl-text{color:var(--t1)}
+.tpl-preview .tpl-img{color:var(--primary);background:rgba(79,195,247,.08);padding:2px 8px;border-radius:4px;display:inline-block;margin:2px 0}
+.tpl-preview .tpl-vid{color:var(--green);background:rgba(129,199,132,.08);padding:2px 8px;border-radius:4px;display:inline-block;margin:2px 0}
+.tpl-preview .tpl-h2{color:var(--orange);font-weight:600}
+
+.sort-list{list-style:none}
+.sort-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);
+  border:1px solid var(--bd);border-radius:6px;margin-bottom:6px;font-size:12px}
+.sort-item .si-handle{color:var(--t3);cursor:grab}.sort-item .si-name{flex:1;color:var(--t1)}
+.sort-item .si-dur{color:var(--t3);font-size:11px}.sort-item .si-remove{color:var(--red);cursor:pointer}
+
+.tab-bar{display:flex;gap:0;border-bottom:1px solid var(--bd);margin-bottom:16px}
+.tab-btn{padding:8px 18px;font-size:12px;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;
+  background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;transition:.15s}
+.tab-btn:hover{color:var(--t1)}.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
+
+.txt-preview{background:var(--bg1);border:1px solid var(--bd);border-radius:6px;padding:10px 14px;
+  font-family:"SF Mono",monospace;font-size:11px;color:var(--t2);max-height:200px;overflow-y:auto;white-space:pre-wrap;line-height:1.5}
+
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0}.panel-row{flex-direction:column}}
+
+/* Table */
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:8px 10px;color:var(--t3);font-weight:500;border-bottom:1px solid var(--bd);font-size:11px}
+.data-table td{padding:8px 10px;border-bottom:1px solid var(--bd);color:var(--t2)}
+.data-table tr:hover td{background:var(--bg3)}
+</style>
+</head>
+<body>
+
+<!-- ══════ Sidebar ══════ -->
+<div class="sidebar">
+  <div class="sidebar-logo">OmniPublish<small>v2.0</small></div>
+  <div class="nav-section">总览</div>
+  <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-icon">🏠</span>工作台总览</div>
+  <div class="nav-section">内容工具</div>
+  <div class="nav-item" onclick="showPage('copywrite')"><span class="nav-icon">✏️</span>文案生成</div>
+  <div class="nav-item" onclick="showPage('cover')"><span class="nav-icon">🖼️</span>封面制作</div>
+  <div class="nav-item" onclick="showPage('rename')"><span class="nav-icon">📝</span>图片重命名</div>
+  <div class="nav-section">图片处理</div>
+  <div class="nav-item" onclick="showPage('img-wm')"><span class="nav-icon">🏷️</span>图片加水印</div>
+  <div class="nav-section">视频处理</div>
+  <div class="nav-item" onclick="showPage('delogo')"><span class="nav-icon">🔲</span>遮盖四角水印</div>
+  <div class="nav-item" onclick="showPage('crop')"><span class="nav-icon">✂️</span>裁掉四角水印</div>
+  <div class="nav-item" onclick="showPage('blur')"><span class="nav-icon">🌫️</span>虚化填充</div>
+  <div class="nav-item" onclick="showPage('trim')"><span class="nav-icon">⏱️</span>片头片尾处理</div>
+  <div class="nav-item" onclick="showPage('concat')"><span class="nav-icon">🔗</span>视频合成</div>
+  <div class="nav-item" onclick="showPage('vid-wm')"><span class="nav-icon">🎬</span>视频加水印</div>
+  <div class="nav-section">发布</div>
+  <div class="nav-item" onclick="showPage('publish')"><span class="nav-icon">🚀</span>后台发布</div>
+</div>
+
+<!-- ══════ Main ══════ -->
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title" id="topbar-title">工作台总览</span>
+    <div class="topbar-right">
+      <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t2);margin-right:12px"><span id="server-dot" style="width:8px;height:8px;border-radius:50%;background:var(--red, #e74c3c);display:inline-block"></span><span id="server-status-text">检测中...</span></span>
+    </div>
+  </div>
+  <div class="page-container">
+
+<!-- ======== Dashboard ======== -->
+<div class="page active" id="page-dashboard">
+  <div class="section-header"><h2>工作台总览</h2></div>
+  <div class="tool-grid">
+    <div class="tool-card" onclick="showPage('copywrite')"><div class="tc-icon">✏️</div><div class="tc-name">文案生成</div><div class="tc-desc">主角+事件 → 标题/文案/关键词</div></div>
+    <div class="tool-card" onclick="showPage('cover')"><div class="tc-icon">🖼️</div><div class="tc-name">封面制作</div><div class="tc-desc">拖入图片或序号指定，单图/双拼/三拼</div></div>
+    <div class="tool-card" onclick="showPage('rename')"><div class="tc-icon">📝</div><div class="tc-name">图片重命名</div><div class="tc-desc">批量重命名文件夹内图片</div></div>
+    <div class="tool-card" onclick="showPage('img-wm')"><div class="tc-icon">🏷️</div><div class="tc-name">图片加水印</div><div class="tc-desc">批量处理，人脸感知定位</div></div>
+    <div class="tool-card" onclick="showPage('delogo')"><div class="tc-icon">🔲</div><div class="tc-name">遮盖四角水印</div><div class="tc-desc">模糊遮盖四角</div></div>
+    <div class="tool-card" onclick="showPage('crop')"><div class="tc-icon">✂️</div><div class="tc-name">裁掉四角水印</div><div class="tc-desc">裁剪四角水印区域</div></div>
+    <div class="tool-card" onclick="showPage('blur')"><div class="tc-icon">🌫️</div><div class="tc-name">虚化填充</div><div class="tc-desc">模糊背景填充标准尺寸</div></div>
+    <div class="tool-card" onclick="showPage('trim')"><div class="tc-icon">⏱️</div><div class="tc-name">片头片尾处理</div><div class="tc-desc">裁掉/添加片头片尾</div></div>
+    <div class="tool-card" onclick="showPage('concat')"><div class="tc-icon">🔗</div><div class="tc-name">视频合成</div><div class="tc-desc">多段视频排序合并</div></div>
+    <div class="tool-card" onclick="showPage('vid-wm')"><div class="tc-icon">🎬</div><div class="tc-name">视频加水印</div><div class="tc-desc">MOV 动态四角轮转水印</div></div>
+    <div class="tool-card" onclick="showPage('publish')" style="border-color:var(--green)"><div class="tc-icon">🚀</div><div class="tc-name">后台发布</div><div class="tc-desc">选文件夹 → 上传视频 → 确认切片 → 存草稿</div></div>
+  </div>
+</div>
+
+<!-- ======== Copywrite ======== -->
+<div class="page" id="page-copywrite">
+  <div class="section-header"><h2>✏️ 文案生成</h2></div>
+  <div class="panel-row">
+    <div class="panel-col">
+      <div class="panel">
+        <div class="panel-title"><span class="dot"></span>输入</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label>主角</label>
+            <input type="text" id="cw-protagonist" placeholder="主角名 / 描述">
+          </div>
+          <div class="form-group" style="flex:2">
+            <label>事件</label>
+            <input type="text" id="cw-event" placeholder="发生了什么事">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>生活照</label>
+            <input type="text" id="cw-photos" placeholder="例: 3张自拍、户外写真等">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>视频内容</label>
+            <input type="text" id="cw-video-desc" placeholder="例: 2段聊天录屏、1段街拍">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>标题字数</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="cw-minlen" value="25" style="width:70px"> <span style="color:var(--t3)">~</span>
+              <input type="number" id="cw-maxlen" value="30" style="width:70px"> <span style="color:var(--t3)">字</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>关键词个数</label>
+            <input type="number" id="cw-kwcount" value="10">
+          </div>
+          <div class="form-group">
+            <label>正文字数</label>
+            <input type="number" id="cw-bodylen" value="300">
+          </div>
+          <div class="form-group">
+            <label>段落数</label>
+            <input type="number" id="cw-paragraphs" value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>文风</label>
+            <select id="cw-style">
+              <option value="反转打脸风">反转打脸风</option>
+              <option value="搞笑玩梗风">搞笑玩梗风</option>
+              <option value="麻辣吐槽风">麻辣吐槽风</option>
+              <option value="深情共情风">深情共情风</option>
+              <option value="悬念揭秘风">悬念揭秘风</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>作者</label>
+            <input type="text" id="cw-author" placeholder="作者名">
+          </div>
+          <div class="form-group" style="flex:2">
+            <label>分类（可多选）</label>
+            <div id="cw-category-box" style="display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px">
+              <label><input type="checkbox" name="cw-cat" value="今日吃瓜" checked> 今日吃瓜</label>
+              <label><input type="checkbox" name="cw-cat" value="学生校园"> 学生校园</label>
+              <label><input type="checkbox" name="cw-cat" value="热门大瓜"> 热门大瓜</label>
+              <label><input type="checkbox" name="cw-cat" value="网红黑料"> 网红黑料</label>
+              <label><input type="checkbox" name="cw-cat" value="明星黑料"> 明星黑料</label>
+              <label><input type="checkbox" name="cw-cat" value="网黄合集"> 网黄合集</label>
+              <label><input type="checkbox" name="cw-cat" value="每日大赛"> 每日大赛</label>
+              <label><input type="checkbox" name="cw-cat" value="伦理道德"> 伦理道德</label>
+              <label><input type="checkbox" name="cw-cat" value="海外吃瓜"> 海外吃瓜</label>
+              <label><input type="checkbox" name="cw-cat" value="领导干部"> 领导干部</label>
+              <label><input type="checkbox" name="cw-cat" value="吃瓜新闻"> 吃瓜新闻</label>
+            </div>
+          </div>
+        </div>
+        <div class="action-bar">
+          <button class="btn btn-primary" onclick="runCopywrite()">🤖 生成文案</button>
+          <button class="btn btn-ghost" onclick="clearCopywrite()">清空</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-col">
+      <div class="panel">
+        <div class="panel-title"><span class="dot"></span>生成结果 <span style="font-weight:normal;font-size:11px;color:var(--t3)">（可手动修改后保存）</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>作者</label><input type="text" id="cw-result-author" placeholder="自动填入"></div>
+          <div class="form-group"><label>分类</label><input type="text" id="cw-result-category" placeholder="自动填入"></div>
+        </div>
+        <div class="form-group"><label>标题</label><input type="text" id="cw-result-title" placeholder="点击「生成文案」后显示"></div>
+        <div class="form-group">
+          <label>关键词（英文逗号分隔）</label>
+          <input type="text" id="cw-result-kw" placeholder="keyword1,keyword2,...">
+        </div>
+        <div class="form-group">
+          <label>文案</label>
+          <textarea id="cw-result-body" rows="10" placeholder="生成的正文"></textarea>
+        </div>
+        <div class="form-row" style="align-items:flex-end;gap:8px">
+          <div class="form-group" style="flex:1"><label>输出文件夹</label><input type="text" id="cw-savepath" placeholder="保存路径（文件夹）"></div>
+          <button class="btn btn-green" onclick="saveCwFile()" style="white-space:nowrap;height:36px">💾 保存为 TXT</button>
+        </div>
+        <div class="form-hint">文件名 = 标题.txt | 内容: 作者 / 分类 / 标题 / 关键词 / 文案</div>
+      </div>
+    </div>
+  </div>
+  <div class="output-box" id="cw-log" style="margin-top:12px">等待执行...</div>
+</div>
+
+<!-- ======== Cover ======== -->
+<div class="page" id="page-cover">
+  <div class="section-header"><h2>🖼️ 封面制作</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>素材选择</div>
+    <div class="form-group">
+      <label>选择封面素材图片（按住 Ctrl/⌘ 可多选）</label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" onclick="pickCoverImages()" style="white-space:nowrap">📁 选择图片</button>
+        <input type="text" id="cover-folder" placeholder="点左侧按钮选择图片，路径自动填入" readonly style="flex:1">
+      </div>
+    </div>
+    <div id="cover-filelist" style="font-size:12px;color:var(--t2);margin-top:6px"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>封面参数</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>拼接方式 <span style="font-size:10px;color:var(--t3)">(模板尺寸 1300×640)</span></label>
+        <select id="cover-layout" onchange="onCoverLayoutChange()">
+          <option value="triple">三拼（3 张横向拼接）</option>
+          <option value="single">单图（单张裁剪）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>头顶留白 (%)</label>
+        <input type="number" id="cover-headmargin" value="15" min="0" max="60">
+        <div class="form-hint">值越大人脸越靠下</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>输出质量 (JPEG)</label><input type="number" id="cover-quality" value="95" min="50" max="100"></div>
+      <div class="form-group"><label>输出目录</label><input type="text" id="cover-output" placeholder="默认与输入同目录"></div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runCover()">🖼️ 生成封面</button></div>
+  <div class="output-box" id="cover-log">等待执行...</div>
+</div>
+
+<!-- ======== Rename ======== -->
+<div class="page" id="page-rename">
+  <div class="section-header"><h2>📝 图片重命名</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>输入</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>图片文件夹路径</label>
+        <input type="text" id="rename-folder" placeholder="/path/to/images">
+      </div>
+      <div class="form-group">
+        <label>重命名前缀</label>
+        <input type="text" id="rename-prefix" placeholder="例: 自动化">
+        <div class="form-hint">图片将被命名为: 前缀_01.jpg, 前缀_02.jpg ...</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>起始编号</label>
+        <input type="number" id="rename-start" value="1" min="1">
+      </div>
+      <div class="form-group">
+        <label>编号位数</label>
+        <select id="rename-digits"><option value="2">2 位 (01, 02)</option><option value="3">3 位 (001, 002)</option></select>
+      </div>
+      <div class="form-group">
+        <label>分隔符</label>
+        <select id="rename-sep"><option value="_">下划线 _</option><option value="-">短横线 -</option><option value="">无</option></select>
+      </div>
+    </div>
+  </div>
+  <div class="action-bar">
+    <button class="btn btn-primary" onclick="runRename()">📝 执行重命名</button>
+    <button class="btn btn-ghost" onclick="previewRename()">预览</button>
+  </div>
+  <div class="output-box" id="rename-log">等待执行...</div>
+</div>
+
+<!-- ======== Image Watermark ======== -->
+<div class="page" id="page-img-wm">
+  <div class="section-header"><h2>🏷️ 图片批量加水印</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>输入 / 输出</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>输入文件夹</label><input type="text" id="imgwm-folder" placeholder="/path/to/images（处理全部图片）"></div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="imgwm-outdir" placeholder="默认同目录"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><input type="checkbox" id="imgwm-subfolders"> 子文件夹模式（每个子文件夹独立处理）</label></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>水印参数</div>
+    <div class="form-row">
+      <div class="form-group"><label>水印文件 (PNG)</label><input type="text" id="imgwm-file" value="workspace/watermark.png"></div>
+      <div class="form-group"><label>浅色水印 (PNG，可选)</label><input type="text" id="imgwm-file-light" placeholder="暗图自动用浅色水印"><div class="form-hint">留空则统一用默认水印</div></div>
+      <div class="form-group"><label>水印宽度 (px)</label><input type="number" id="imgwm-wmwidth" value="264"></div>
+      <div class="form-group"><label>图片缩放宽 (px)</label><input type="number" id="imgwm-imgwidth" value="800"></div>
+      <div class="form-group"><label>边距 (px)</label><input type="number" id="imgwm-margin" value="10"></div>
+      <div class="form-group"><label>透明度 (%)</label><input type="number" id="imgwm-opacity" value="100" min="10" max="100" step="5"><div class="form-hint">100=不透明，50=半透明</div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>定位策略</label>
+        <select id="imgwm-position">
+          <option value="bottom-right">右下角（人脸感知自动避让）</option>
+          <option value="bottom-left">左下角（人脸感知自动避让）</option>
+          <option value="top-right">右上角（人脸感知自动避让）</option>
+          <option value="top-left">左上角（人脸感知自动避让）</option>
+          <option value="center-left">左侧中间（人脸感知自动避让）</option>
+          <option value="center-right">右侧中间（人脸感知自动避让）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runImgWm()">🏷️ 批量加水印</button></div>
+  <div class="output-box" id="imgwm-log">等待执行...</div>
+</div>
+
+<!-- ======== Video Watermark ======== -->
+<div class="page" id="page-vid-wm">
+  <div class="section-header"><h2>🎬 视频批量加水印</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>输入 / 输出</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>输入文件夹</label><input type="text" id="vidwm-folder" placeholder="/path/to/videos（处理全部视频）"></div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="vidwm-outdir" placeholder="默认同目录"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><input type="checkbox" id="vidwm-subfolders"> 子文件夹模式（每个子文件夹独立处理）</label></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>水印设置</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>水印模式</label>
+        <select id="vidwm-mode" onchange="onVidWmModeChange()">
+          <option value="corner-cycle">动态四角轮转</option>
+          <option value="fixed">固定位置</option>
+          <option value="diagonal">双水印（上下对角轮转）</option>
+        </select>
+      </div>
+      <div class="form-group" id="vidwm-fixedpos-group" style="display:none">
+        <label>固定位置</label>
+        <select id="vidwm-fixed-pos">
+          <option value="top-left">左上角</option>
+          <option value="top-right">右上角</option>
+          <option value="bottom-left">左下角</option>
+          <option value="bottom-right" selected>右下角</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>水印文件 (.mov/.png)</label><input type="text" id="vidwm-wmfile" value="workspace/watermark.mov"></div>
+    </div>
+    <div class="form-row" id="vidwm-wmfile2-group" style="display:none">
+      <div class="form-group" style="flex:2"><label>第二水印文件（双水印模式用）</label><input type="text" id="vidwm-wmfile2" placeholder="第二个水印文件路径"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>横屏水印缩放 (%)</label>
+        <input type="number" id="vidwm-scale-landscape" value="35" min="5" max="50">
+        <div class="form-hint">占短边百分比</div>
+      </div>
+      <div class="form-group">
+        <label>竖屏水印缩放 (%)</label>
+        <input type="number" id="vidwm-scale-portrait" value="35" min="5" max="50">
+        <div class="form-hint">占短边百分比</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>编码</div>
+    <div class="form-row">
+      <div class="form-group"><label>分辨率</label><select id="vidwm-scale"><option value="720">720p</option><option value="1080">1080p</option><option value="original">原始</option></select></div>
+      <div class="form-group"><label>编码器</label><select id="vidwm-codec"><option value="h264_videotoolbox">VideoToolbox (macOS GPU)</option><option value="h264_nvenc">NVENC (NVIDIA GPU)</option><option value="h264_amf">AMF (AMD GPU)</option><option value="h264_qsv">QSV (Intel GPU)</option><option value="libx264">libx264 (CPU)</option></select></div>
+      <div class="form-group"><label>码率</label><input type="text" id="vidwm-bitrate" value="2M"></div>
+      <div class="form-group"><label>帧率</label><input type="number" id="vidwm-fps" value="30"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><input type="checkbox" id="vidwm-compress" onchange="onVidWmCompressChange()"> 成品压缩到指定大小</label></div>
+      <div class="form-group" id="vidwm-target-group" style="display:none"><label>目标大小 (MB)</label><input type="number" id="vidwm-target-size" value="10" min="1" max="500"><div class="form-hint">超过此大小才会压缩</div></div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runVidWm()">🎬 批量加水印</button></div>
+  <div class="output-box" id="vidwm-log">等待执行...</div>
+</div>
+
+<!-- ======== Concat ======== -->
+<div class="page" id="page-concat">
+  <div class="section-header"><h2>🔗 视频合成</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>视频列表</div>
+    <div class="form-group">
+      <label>选择要合并的视频（按住 Ctrl/⌘ 可多选，按文件名排序合并）</label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" onclick="pickConcatVideos()" style="white-space:nowrap">📁 选择视频</button>
+        <input type="text" id="concat-folder" placeholder="点左侧按钮选择视频" readonly style="flex:1">
+      </div>
+    </div>
+    <div id="concat-filelist" style="font-size:12px;color:var(--t2);margin-top:6px"></div>
+    <div class="form-group" style="margin-top:8px">
+      <label>输出文件夹</label><input type="text" id="concat-outdir" placeholder="默认同目录">
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>参数</div>
+    <div class="form-row">
+      <div class="form-group"><label>方式</label><select id="concat-method"><option value="filter">filter_complex（兼容混合格式）</option><option value="demuxer">demuxer（同格式快速无损）</option></select></div>
+      <div class="form-group"><label>分辨率</label><select id="concat-scale"><option value="auto">智能720p（自动检测方向）</option><option value="first">跟随首个</option><option value="720p">横版720p</option><option value="1080p">横版1080p</option></select></div>
+      <div class="form-group"><label>输出文件名</label><input type="text" id="concat-output" placeholder="merged.mp4"></div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runConcat()">🔗 合成</button></div>
+  <div class="output-box" id="concat-log">等待执行...</div>
+</div>
+
+<!-- ======== Delogo ======== -->
+<div class="page" id="page-delogo">
+  <div class="section-header"><h2>🔲 遮盖四角水印</h2></div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>输入 / 输出</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>选择视频（按住 Ctrl/⌘ 可多选）</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="pickVideos('delogo-folder','delogo-filelist')" style="white-space:nowrap;padding:6px 12px">📁 选择</button>
+          <input type="text" id="delogo-folder" placeholder="点按钮选择视频" readonly style="flex:1">
+        </div>
+        <div id="delogo-filelist" style="font-size:12px;color:var(--t2);margin-top:4px"></div>
+      </div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="delogo-outdir" placeholder="默认同目录"></div>
+      <div class="form-group"><label>方向</label><select id="delogo-orient" onchange="updateDelogoCoords()"><option value="auto">自动</option><option value="portrait">竖屏</option><option value="landscape">横屏</option></select></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>四角坐标 (x:y:w:h)</div>
+    <div class="form-row">
+      <div class="form-group"><label>左上</label><input type="text" id="delogo-tl" value="1:1:304:160"></div>
+      <div class="form-group"><label>右上</label><input type="text" id="delogo-tr" value="415:1:304:160"></div>
+      <div class="form-group"><label>左下</label><input type="text" id="delogo-bl" value="1:1119:304:160"></div>
+      <div class="form-group"><label>右下</label><input type="text" id="delogo-br" value="415:1119:304:160"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>编码器</label><select id="delogo-codec"><option value="h264_videotoolbox">VideoToolbox</option><option value="h264_nvenc">NVENC</option><option value="h264_amf">AMF</option><option value="h264_qsv">QSV</option><option value="libx264">libx264</option></select></div>
+      <div class="form-group"><label>码率</label><input type="text" id="delogo-bitrate" value="2M"></div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runDelogo()">🔲 执行</button><button class="btn btn-ghost" onclick="updateDelogoCoords()">重置坐标</button></div>
+  <div class="output-box" id="delogo-log">等待执行...</div>
+</div>
+
+<!-- ======== Crop ======== -->
+<div class="page" id="page-crop">
+  <div class="section-header"><h2>✂️ 裁掉四角水印</h2></div>
+  <div class="panel">
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>选择视频（按住 Ctrl/⌘ 可多选）</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="pickVideos('crop-folder','crop-filelist')" style="white-space:nowrap;padding:6px 12px">📁 选择</button>
+          <input type="text" id="crop-folder" placeholder="点按钮选择视频" readonly style="flex:1">
+        </div>
+        <div id="crop-filelist" style="font-size:12px;color:var(--t2);margin-top:4px"></div>
+      </div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="crop-outdir" placeholder="默认同目录"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>方向</label><select id="crop-orient" onchange="updateCropSize()"><option value="auto">自动</option><option value="portrait">竖屏→720×960</option><option value="landscape">横屏→670×720</option></select></div>
+      <div class="form-group"><label>裁剪尺寸</label><input type="text" id="crop-size" value="自动" readonly></div>
+      <div class="form-group"><label>编码器</label><select id="crop-codec"><option value="h264_videotoolbox">VideoToolbox</option><option value="h264_nvenc">NVENC</option><option value="h264_amf">AMF</option><option value="h264_qsv">QSV</option><option value="libx264">libx264</option></select></div>
+      <div class="form-group"><label>码率</label><input type="text" id="crop-bitrate" value="2M"></div>
+    </div>
+    <div class="form-check"><input type="checkbox" id="crop-lossless" style="display:none"><label for="crop-lossless" style="display:none"></label></div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runCrop()">✂️ 执行</button></div>
+  <div class="output-box" id="crop-log">等待执行...</div>
+</div>
+
+<!-- ======== Blur ======== -->
+<div class="page" id="page-blur">
+  <div class="section-header"><h2>🌫️ 虚化填充</h2></div>
+  <div class="panel">
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>选择视频（按住 Ctrl/⌘ 可多选）</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="pickVideos('blur-folder','blur-filelist')" style="white-space:nowrap;padding:6px 12px">📁 选择</button>
+          <input type="text" id="blur-folder" placeholder="点按钮选择视频" readonly style="flex:1">
+        </div>
+        <div id="blur-filelist" style="font-size:12px;color:var(--t2);margin-top:4px"></div>
+      </div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="blur-outdir" placeholder="默认同目录"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>目标方向</label><select id="blur-orient" onchange="updateBlurTarget()"><option value="auto">自动</option><option value="landscape">横屏 1280×720</option><option value="portrait">竖屏 720×1280</option></select></div>
+      <div class="form-group"><label>目标尺寸</label><input type="text" id="blur-target" value="自动" readonly></div>
+      <div class="form-group"><label>模糊强度</label><input type="text" id="blur-strength" value="5:1"></div>
+      <div class="form-group"><label>背景缩放</label><input type="text" id="blur-bgscale" value="1/8"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>编码器</label><select id="blur-codec"><option value="h264_videotoolbox">VideoToolbox (macOS)</option><option value="h264_nvenc">NVENC (NVIDIA)</option><option value="h264_amf">AMF (AMD)</option><option value="h264_qsv">QSV (Intel)</option><option value="libx264">libx264 (通用)</option></select></div>
+      <div class="form-group"><label>码率</label><input type="text" id="blur-bitrate" value="2M"></div>
+    </div>
+    <div class="form-check"><input type="checkbox" id="blur-skip" checked><label for="blur-skip">尺寸匹配时跳过</label></div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runBlur()">🌫️ 执行</button></div>
+  <div class="output-box" id="blur-log">等待执行...</div>
+</div>
+
+<!-- ======== Trim ======== -->
+<div class="page" id="page-trim">
+  <div class="section-header"><h2>⏱️ 片头片尾处理</h2></div>
+  <div class="panel">
+    <div class="form-row">
+      <div class="form-group">
+        <label>处理模式</label>
+        <select id="trim-action" onchange="onTrimActionChange()">
+          <option value="remove">去片头片尾</option>
+          <option value="add">加片头片尾</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>选择视频（按住 Ctrl/⌘ 可多选）</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="pickVideos('trim-folder','trim-filelist')" style="white-space:nowrap;padding:6px 12px">📁 选择</button>
+          <input type="text" id="trim-folder" placeholder="点按钮选择视频" readonly style="flex:1">
+        </div>
+        <div id="trim-filelist" style="font-size:12px;color:var(--t2);margin-top:4px"></div>
+      </div>
+      <div class="form-group"><label>输出文件夹</label><input type="text" id="trim-outdir" placeholder="默认同目录"></div>
+    </div>
+    <!-- Remove mode options -->
+    <div id="trim-remove-opts">
+      <div class="form-row">
+        <div class="form-group"><label>去片头 (秒)</label><input type="number" id="trim-start" value="0" min="0" step="0.5"></div>
+        <div class="form-group"><label>去片尾 (秒)</label><input type="number" id="trim-end" value="11" min="0" step="0.5"></div>
+        <div class="form-group"><label>编码</label><select id="trim-mode"><option value="copy">Stream Copy（无损）</option><option value="reencode">重编码（精准）</option></select></div>
+        <div class="form-group"><label>最短保留 (秒)</label><input type="number" id="trim-minlen" value="5" min="1"></div>
+      </div>
+    </div>
+    <!-- Add mode options -->
+    <div id="trim-add-opts" style="display:none">
+      <div class="form-row">
+        <div class="form-group" style="flex:2"><label>片头视频（可选）</label><input type="text" id="trim-intro-file" placeholder="片头视频路径"></div>
+        <div class="form-group" style="flex:2"><label>片尾视频（可选）</label><input type="text" id="trim-outro-file" placeholder="片尾视频路径"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><div class="form-hint">片头片尾会自动缩放到 720p 再拼接</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="action-bar"><button class="btn btn-primary" onclick="runTrim()">⏱️ 执行</button></div>
+  <div class="output-box" id="trim-log">等待执行...</div>
+</div>
+
+<!-- ======== Publish (含一条龙 + 队列) ======== -->
+<div class="page" id="page-publish">
+  <div class="section-header"><h2>🚀 后台发布</h2></div>
+
+  <!-- Login (always visible) -->
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>账号登录</div>
+    <div class="form-row">
+      <div class="form-group"><label>项目入口</label><input type="text" id="pub-baseurl" placeholder="https://xxx.xxx.xx/api.php"></div>
+      <div class="form-group"><label>项目代码</label><input type="text" id="pub-projcode"></div>
+      <div class="form-group"><label>用户名</label><input type="text" id="pub-username"></div>
+      <div class="form-group"><label>密码</label><input type="password" id="pub-password"></div>
+    </div>
+    <div class="action-bar">
+      <button class="btn btn-primary btn-sm" onclick="pubLogin()">🔑 登录</button>
+      <span id="pub-login-status" style="font-size:12px;color:var(--t3)">未登录</span>
+    </div>
+  </div>
+
+  <!-- Add post to queue -->
+  <div class="panel">
+    <div class="panel-title"><span class="dot-green"></span>添加帖子到队列</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:3">
+        <label>素材文件夹路径（含封面、图片、视频、txt）</label>
+        <input type="text" id="pub-folder" placeholder="/path/to/task_folder（支持拖入文件夹）" style="font-size:13px;padding:9px">
+      </div>
+    </div>
+    <div class="form-hint" style="color:var(--t2);margin:4px 0 0;font-size:11px">💡 标题、分类、关键词、作者等信息从素材文件夹的 TXT 文件自动读取，无需在此填写。如需加水印，请在对应功能页预先处理。</div>
+
+    <!-- Layout template -->
+    <div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:12px">
+      <div class="panel-title"><span class="dot-orange"></span>帖子排版</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:0 0 180px">
+          <label>排版预设</label>
+          <select id="pub-tpl-preset" onchange="loadLayoutPreset()">
+            <option value="">— 选择预设 —</option>
+            <option value="img-interleave">图文交替型</option>
+            <option value="vid-list">视频列表型</option>
+            <option value="mixed">图文+视频混合</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>排版模板（可编辑）</label>
+          <textarea id="pub-tpl-editor" rows="10" style="font-family:'SF Mono',monospace;font-size:11px">正文
+图片1-3
+
+## 小标题
+正文
+图片4-6
+
+## 小标题
+正文
+视频</textarea>
+          <div class="form-hint">正文 = txt段落 | 图片1-3 = 第1~3张图 | 视频 / 视频1 = 视频文件 | ## 小标题 = 二级标题 | 空行分段</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-green" onclick="pubAddToQueue()">▶ 上传视频（加入队列）</button>
+    </div>
+  </div>
+
+  <!-- Post Queue -->
+  <div class="panel">
+    <div class="panel-title"><span class="dot"></span>发布队列 <span class="badge badge-primary" id="queue-count">0 个帖子</span></div>
+    <table class="data-table" id="pub-queue-table" style="display:none">
+      <thead>
+        <tr>
+          <th style="width:30px">#</th>
+          <th>素材文件夹</th>
+          <th style="width:180px">状态</th>
+          <th style="width:200px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="pub-queue-body"></tbody>
+    </table>
+    <div id="pub-queue-empty" style="font-size:12px;color:var(--t3);text-align:center;padding:16px">队列为空，请在上方添加帖子</div>
+    <div class="action-bar" id="pub-batch-bar" style="display:none">
+      <button class="btn btn-green btn-lg" onclick="pubBatchDraft()">📝 一键存草稿（所有切片完成的帖子）</button>
+      <button class="btn btn-ghost" onclick="pubClearQueue()">清空队列</button>
+    </div>
+    <div class="form-hint">流程：点击「上传视频」→ 自动上传 → 去平台后台确认切片完成 → 点「存草稿」。等待切片时可继续添加下一个帖子。</div>
+  </div>
+
+  <div class="output-box" id="pub-log" style="min-height:100px">点击「上传视频」→ 自动上传 → 确认切片 → 逐个存草稿</div>
+</div>
+
+  </div><!-- /page-container -->
+</div><!-- /main -->
+
+<!-- ══════ JavaScript ══════ -->
+<script>
+/* ═══ Page Nav ═══ */
+const PT={dashboard:'工作台总览',copywrite:'文案生成',cover:'封面制作',rename:'图片重命名',
+  'img-wm':'图片加水印',
+  'vid-wm':'视频加水印',concat:'视频合成',delogo:'遮盖四角水印',
+  crop:'裁掉四角水印',blur:'虚化填充',trim:'片头片尾处理',publish:'后台发布'};
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const pg=document.getElementById('page-'+id);if(pg)pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.getAttribute('onclick')==="showPage('"+id+"')")n.classList.add('active')});
+  document.getElementById('topbar-title').textContent=PT[id]||id;
+}
+
+/* ═══ Helpers ═══ */
+function $(id){return document.getElementById(id)}
+function setV(id,v){const el=$(id);if(el)el.value=v}
+function getV(id){const el=$(id);return el?el.value:''}
+function clearLog(id){const b=$(id);if(b)b.innerHTML=''}
+
+function log(id,msg,cls){
+  const b=$(id);if(!b)return;
+  b.innerHTML+=(cls?`<span class="log-${cls}">${msg}</span>`:msg)+'\n';
+  b.scrollTop=b.scrollHeight;
+}
+
+function logCmd(logId, cmd){
+  const b=$(logId);if(!b)return;
+  const escaped=cmd.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  b.innerHTML+=`<div style="margin:6px 0;padding:8px 10px;background:var(--bg1);border:1px solid var(--bd);border-radius:6px;position:relative">
+<code style="white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--primary);user-select:all">${escaped}</code>
+<button onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent);this.textContent='已复制'" style="position:absolute;top:4px;right:6px;background:var(--bg3);border:1px solid var(--bd);color:var(--t2);padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">复制</button>
+</div>`;
+  b.scrollTop=b.scrollHeight;
+}
+
+/* ═══ runCmd: 显示命令 + 通过本地服务器执行 ═══ */
+async function runCmd(logId, cmd){
+  logCmd(logId, cmd);
+  const flatCmd = cmd.replace(/\\\n\s*/g, ' ').trim();
+  log(logId, '⏳ 正在执行...', 'info');
+  let exitCode = -1;
+
+  try {
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cmd: flatCmd})
+    });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for(const line of lines){
+        if(!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if(ev.line !== undefined) log(logId, ev.line);
+          if(ev.done){
+            exitCode = ev.code;
+            if(ev.code === 0) log(logId, '✅ 执行完成', 'ok');
+            else log(logId, `❌ 执行失败 (退出码 ${ev.code})`, 'error');
+          }
+        } catch(e){}
+      }
+    }
+  } catch(e){
+    log(logId, `❌ 无法连接执行服务: ${e.message}`, 'error');
+    log(logId, '💡 请先启动服务: python3 server.py', 'warn');
+  }
+  return exitCode;
+}
+
+/* ═══ Skill Path (所有命令的基础路径) ═══ */
+const SKILL_DIR_KEY='omnipublish_skill_dir';
+function getSkillDir(){
+  return localStorage.getItem(SKILL_DIR_KEY)||'~/.claude/skills/omnipublish';
+}
+
+/* ═══ Server auto-detection ═══ */
+let _serverOnline = false;
+async function checkServer(){
+  const dot=$('server-dot'), txt=$('server-status-text');
+  try {
+    const r = await fetch('/api/info', {signal: AbortSignal.timeout(2000)});
+    const info = await r.json();
+    _serverOnline = true;
+    if(info.skill_dir) localStorage.setItem(SKILL_DIR_KEY, info.skill_dir);
+    // Auto-select codec based on server platform (only on first connect)
+    if(info.platform && !localStorage.getItem('_codec_set')){
+      const defaultCodec = info.platform==='Darwin'?'h264_videotoolbox':
+                           info.platform==='Windows'?'libx264':'libx264';
+      ['vidwm-codec','delogo-codec','crop-codec','blur-codec'].forEach(id=>{
+        const el=$(id); if(el) el.value=defaultCodec;
+      });
+      localStorage.setItem('_codec_set','1');
+    }
+    if(dot){dot.style.background='var(--green)'}
+    if(txt){txt.textContent='服务已连接'}
+  } catch(e){
+    _serverOnline = false;
+    if(dot){dot.style.background='var(--red, #e74c3c)'}
+    if(txt){txt.textContent='未连接 (仅生成命令)'}
+  }
+}
+
+/* ═══ Copywrite ═══ */
+async function runCopywrite(){
+  const protagonist=getV('cw-protagonist');
+  const event=getV('cw-event');
+  if(!protagonist&&!event){alert('请至少填写主角或事件');return}
+  const sd=getSkillDir();
+  const photos=getV('cw-photos');
+  const videoDesc=getV('cw-video-desc');
+  const style=getV('cw-style');
+  const titleMin=getV('cw-minlen')||20;
+  const titleMax=getV('cw-maxlen')||30;
+  const kwCount=getV('cw-kwcount')||5;
+  const bodyLen=getV('cw-bodylen')||300;
+  const paragraphs=getV('cw-paragraphs')||3;
+  const cat=[...document.querySelectorAll('input[name="cw-cat"]:checked')].map(c=>c.value).join(',') || '今日吃瓜';
+  const author=getV('cw-author')||'编辑';
+
+  setV('cw-result-author', author);
+  setV('cw-result-category', cat);
+  clearLog('cw-log');
+
+  // Shell-escape helper
+  const esc=s=>(s||'').replace(/'/g,"'\\''");
+
+  let cmd=`python3 "${sd}/scripts/copywrite_gen.py"`;
+  cmd+=` --protagonist '${esc(protagonist)}'`;
+  cmd+=` --event '${esc(event)}'`;
+  if(photos) cmd+=` --photos '${esc(photos)}'`;
+  if(videoDesc) cmd+=` --video-desc '${esc(videoDesc)}'`;
+  cmd+=` --style '${esc(style)}'`;
+  cmd+=` --title-min ${titleMin} --title-max ${titleMax}`;
+  cmd+=` --kw-count ${kwCount} --body-len ${bodyLen} --paragraphs ${paragraphs}`;
+  cmd+=` --author '${esc(author)}' --category '${esc(cat)}'`;
+
+  await runCmd('cw-log', cmd);
+
+  // 从 log 中解析 @@CW_RESULT@@ 行，自动填入结果字段
+  parseCwResult();
+}
+function parseCwResult(){
+  const box=$('cw-log');
+  if(!box)return;
+  const lines=box.innerText.split('\n');
+  for(const line of lines){
+    const idx=line.indexOf('@@CW_RESULT@@');
+    if(idx===-1) continue;
+    try{
+      const r=JSON.parse(line.slice(idx+13));
+      if(r.author) setV('cw-result-author',r.author);
+      if(r.category) setV('cw-result-category',r.category);
+      if(r.title) setV('cw-result-title',r.title);
+      if(r.keywords) setV('cw-result-kw',r.keywords);
+      if(r.body) setV('cw-result-body',r.body);
+      // 隐藏 @@CW_RESULT@@ 行（用户不需要看到）
+      for(const el of box.querySelectorAll('.log-line')){
+        if(el.textContent.includes('@@CW_RESULT@@')) el.style.display='none';
+      }
+      log('cw-log','✅ 结果已自动填入右侧字段','ok');
+    }catch(e){}
+    return;
+  }
+}
+function clearCopywrite(){
+  ['cw-protagonist','cw-event','cw-photos','cw-video-desc',
+   'cw-result-title','cw-result-body','cw-result-kw',
+   'cw-result-author','cw-result-category'].forEach(id=>setV(id,''));
+}
+
+function saveCwFile(){
+  const author=getV('cw-result-author')||getV('cw-author')||'';
+  const cat=getV('cw-result-category')||[...document.querySelectorAll('input[name="cw-cat"]:checked')].map(c=>c.value).join(',')||'';
+  const title=getV('cw-result-title');
+  const kw=getV('cw-result-kw');
+  const body=getV('cw-result-body');
+  const folder=getV('cw-savepath');
+  if(!folder){alert('请输入输出文件夹路径');return}
+  if(!title&&!body){alert('请先生成或填写文案');return}
+  // Filename = title (sanitized) + .txt
+  const safeName=(title||'untitled').replace(/[\/\\:*?"<>|]/g,'_').substring(0,80);
+  const filePath=`${folder}/${safeName}.txt`;
+  clearLog('cw-log');
+  log('cw-log','保存文案:','info');
+  const content=`作者: ${author}\n分类: ${cat}\n标题: ${title}\n关键词: ${kw}\n\n${body}`;
+  fetch('/api/save-file',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:filePath,content:content})})
+    .then(r=>r.json()).then(d=>{
+      if(d.saved) log('cw-log',`已保存: ${d.saved}`,'ok');
+      else log('cw-log',`保存失败: ${d.error||'unknown'}`,'error');
+    }).catch(e=>log('cw-log',`保存失败: ${e}`,'error'));
+}
+
+/* ═══ Cover ═══ */
+function onCoverLayoutChange(){
+  const l=getV('cover-layout');
+  const hints={single:'请选择 1 张图片',double:'请选择 2 张图片',triple:'请选择 3 张图片'};
+  const fl=$('cover-filelist');
+  if(fl && !fl.innerHTML) fl.innerHTML=`<span style="color:var(--t3)">${hints[l]||''}</span>`;
+}
+
+/* ═══ 封面素材：直接选图片 ═══ */
+async function pickCoverImages(){
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.multiple = true;
+  picker.accept = 'image/*';
+  picker.onchange = async () => {
+    if(!picker.files.length) return;
+    const files = Array.from(picker.files);
+    // Show selected filenames
+    const fl = $('cover-filelist');
+    fl.innerHTML = '已选择: ' + files.map((f,i) =>
+      `<span style="color:var(--primary)">[${i+1}] ${f.name}</span>`
+    ).join(', ');
+    // Resolve absolute path via server
+    const input = $('cover-folder');
+    input.value = '正在解析路径...';
+    try {
+      const fileInfos = files.slice(0,3).map(f => ({name:f.name, size:f.size}));
+      const r = await fetch('/api/pick-folder', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({files: fileInfos})
+      });
+      const d = await r.json();
+      if(d.path){
+        input.value = d.path;
+        saveCache();
+      } else {
+        input.value = '';
+        alert('未能定位文件夹路径，请手动输入完整路径');
+        input.readOnly = false;
+        input.placeholder = '请粘贴图片所在文件夹的完整路径';
+      }
+    } catch(e){
+      input.value = '';
+      alert('服务未连接，请确保 server.py 已启动');
+    }
+  };
+  picker.click();
+}
+
+function runCover(){
+  clearLog('cover-log');
+  const folder=getV('cover-folder');
+  if(!folder){alert('请输入图片文件夹路径');return}
+  const layout=getV('cover-layout');
+  const margin=(parseFloat(getV('cover-headmargin'))||15)/100;
+  const quality=getV('cover-quality')||95;
+  const output=getV('cover-output')||folder;
+  const sd=getSkillDir();
+  log('cover-log','执行命令:','info');
+  runCmd('cover-log',`python3 "${sd}/scripts/make_cover.py" \\\n  --folder "${folder}" \\\n  --output "${output}" \\\n  --layout ${layout} \\\n  --head-margin ${margin} \\\n  --quality ${quality}`);
+}
+
+/* ═══ Rename ═══ */
+function runRename(){
+  clearLog('rename-log');
+  const folder=getV('rename-folder');
+  if(!folder){alert('请输入图片文件夹路径');return}
+  const prefix=getV('rename-prefix')||'image';
+  const start=getV('rename-start')||'1';
+  const digits=getV('rename-digits')||'2';
+  const sep=getV('rename-sep')||'_';
+  const sd=getSkillDir();
+  log('rename-log','执行命令:','info');
+  runCmd('rename-log',`python3 "${sd}/scripts/image_rename.py" \\\n  --folder "${folder}" \\\n  --prefix "${prefix}" \\\n  --start ${start} \\\n  --digits ${digits} \\\n  --separator "${sep}"`);
+}
+function previewRename(){
+  clearLog('rename-log');
+  const folder=getV('rename-folder');
+  if(!folder){alert('请输入图片文件夹路径');return}
+  const sd=getSkillDir();
+  log('rename-log','预览命令:','info');
+  runCmd('rename-log',`python3 "${sd}/scripts/image_rename.py" \\\n  --folder "${folder}" \\\n  --prefix "${getV('rename-prefix')||'image'}" \\\n  --start ${getV('rename-start')||'1'} \\\n  --digits ${getV('rename-digits')||'2'} \\\n  --separator "${getV('rename-sep')||'_'}" \\\n  --dry-run`);
+}
+
+/* ═══ Image Watermark ═══ */
+function runImgWm(){
+  clearLog('imgwm-log');
+  const folder=getV('imgwm-folder');
+  if(!folder){alert('请输入图片文件夹路径');return}
+  const wm=getV('imgwm-file');
+  if(!wm){alert('请输入水印文件路径');return}
+  const sd=getSkillDir();
+  const subfolders=$('imgwm-subfolders').checked;
+
+  function buildImgWmCmd(inputDir, outputDir){
+    let cmd=`python3 "${sd}/scripts/image_watermark.py" \\\n  --folder "${inputDir}" \\\n  --output "${outputDir}" \\\n  --watermark "${wm}" \\\n  --img-width ${getV('imgwm-imgwidth')||800} \\\n  --wm-width ${getV('imgwm-wmwidth')||264} \\\n  --margin ${getV('imgwm-margin')||10} \\\n  --opacity ${getV('imgwm-opacity')||100} \\\n  --position ${getV('imgwm-position')||'bottom-right'}`;
+    const wmLight=getV('imgwm-file-light');
+    if(wmLight) cmd+=` \\\n  --watermark-light "${wmLight}"`;
+    return cmd;
+  }
+
+  if(subfolders){
+    let cmd=buildImgWmCmd(folder,folder+'/已处理')+` \\\n  --recursive`;
+    log('imgwm-log','子文件夹模式:','info');
+    runCmd('imgwm-log',cmd);
+  } else {
+    const output=getV('imgwm-outdir')||folder+'/已处理';
+    log('imgwm-log','执行命令:','info');
+    runCmd('imgwm-log',buildImgWmCmd(folder,output));
+  }
+}
+
+/* ═══ Video Tools (all use video_process.py) ═══ */
+function onVidWmCompressChange(){
+  $('vidwm-target-group').style.display=$('vidwm-compress').checked?'':'none';
+}
+function onVidWmModeChange(){
+  const mode=getV('vidwm-mode');
+  $('vidwm-fixedpos-group').style.display = mode==='fixed'?'':'none';
+  $('vidwm-wmfile2-group').style.display = mode==='diagonal'?'flex':'none';
+}
+
+function runVidWm(){
+  clearLog('vidwm-log');
+  const folder=getV('vidwm-folder');
+  if(!folder){alert('请输入视频文件夹路径');return}
+  const wm=getV('vidwm-wmfile');
+  if(!wm){alert('请输入水印文件路径');return}
+  const mode=getV('vidwm-mode')||'corner-cycle';
+  const output=getV('vidwm-outdir')||folder+'/已处理';
+  const sd=getSkillDir();
+  let cmd=`python3 "${sd}/scripts/video_process.py" watermark \\\n  --input "${folder}" \\\n  --output "${output}" \\\n  --watermark "${wm}" \\\n  --wm-mode ${mode} \\\n  --scale-landscape ${getV('vidwm-scale-landscape')||35} \\\n  --scale-portrait ${getV('vidwm-scale-portrait')||35} \\\n  --resolution ${getV('vidwm-scale')||720} \\\n  --codec ${getV('vidwm-codec')||'libx264'} \\\n  --bitrate ${getV('vidwm-bitrate')||'2M'} \\\n  --fps ${getV('vidwm-fps')||30}`;
+  if(mode==='fixed') cmd+=` \\\n  --fixed-pos ${getV('vidwm-fixed-pos')||'bottom-right'}`;
+  if(mode==='diagonal'){
+    const wm2=getV('vidwm-wmfile2');
+    if(!wm2){alert('双水印模式需要第二个水印文件');return}
+    cmd+=` \\\n  --wmfile2 "${wm2}"`;
+  }
+  if($('vidwm-compress').checked){
+    const ts=getV('vidwm-target-size')||'10';
+    cmd+=` \\\n  --compress --target-size ${ts}`;
+  }
+  if($('vidwm-subfolders').checked){
+    cmd+=` \\\n  --subfolders`;
+  }
+  log('vidwm-log','执行命令:','info');
+  runCmd('vidwm-log',cmd);
+}
+
+function runDelogo(){
+  clearLog('delogo-log');
+  const folder=getV('delogo-folder');
+  if(!folder){alert('请选择视频');return}
+  const inputDir=$('delogo-folder').dataset.tmpFolder||folder;
+  const srcFolder=$('delogo-folder').dataset.srcFolder||folder;
+  const output=getV('delogo-outdir')||srcFolder+'/已处理';
+  const sd=getSkillDir();
+  log('delogo-log','执行命令:','info');
+  runCmd('delogo-log',`python3 "${sd}/scripts/video_process.py" delogo \\\n  --input "${inputDir}" \\\n  --output "${output}" \\\n  --orient ${getV('delogo-orient')||'auto'} \\\n  --codec ${getV('delogo-codec')||'libx264'} \\\n  --bitrate ${getV('delogo-bitrate')||'2M'} \\\n  --dl-tl "${getV('delogo-tl')}" \\\n  --dl-tr "${getV('delogo-tr')}" \\\n  --dl-bl "${getV('delogo-bl')}" \\\n  --dl-br "${getV('delogo-br')}"`);
+}
+
+function runCrop(){
+  clearLog('crop-log');
+  const folder=getV('crop-folder');
+  if(!folder){alert('请选择视频');return}
+  const inputDir=$('crop-folder').dataset.tmpFolder||folder;
+  const srcFolder=$('crop-folder').dataset.srcFolder||folder;
+  const output=getV('crop-outdir')||srcFolder+'/已处理';
+  const sd=getSkillDir();
+  log('crop-log','执行命令:','info');
+  runCmd('crop-log',`python3 "${sd}/scripts/video_process.py" crop \\\n  --input "${inputDir}" \\\n  --output "${output}" \\\n  --orient ${getV('crop-orient')||'auto'} \\\n  --codec ${getV('crop-codec')||'libx264'} \\\n  --bitrate ${getV('crop-bitrate')||'2M'}`);
+}
+
+function runBlur(){
+  clearLog('blur-log');
+  const folder=getV('blur-folder');
+  if(!folder){alert('请选择视频');return}
+  const inputDir=$('blur-folder').dataset.tmpFolder||folder;
+  const srcFolder=$('blur-folder').dataset.srcFolder||folder;
+  const output=getV('blur-outdir')||srcFolder+'/已处理';
+  const sd=getSkillDir();
+  log('blur-log','执行命令:','info');
+  runCmd('blur-log',`python3 "${sd}/scripts/video_process.py" blur-pad \\\n  --input "${inputDir}" \\\n  --output "${output}" \\\n  --orient ${getV('blur-orient')||'auto'} \\\n  --strength "${getV('blur-strength')||'5:1'}" \\\n  --bg-scale "${getV('blur-bgscale')||'1/8'}" \\\n  --codec ${getV('blur-codec')||'libx264'} \\\n  --bitrate ${getV('blur-bitrate')||'2M'}`);
+}
+
+function onTrimActionChange(){
+  const action=getV('trim-action');
+  $('trim-remove-opts').style.display=action==='remove'?'':'none';
+  $('trim-add-opts').style.display=action==='add'?'':'none';
+}
+
+function runTrim(){
+  clearLog('trim-log');
+  const folder=getV('trim-folder');
+  if(!folder){alert('请选择视频');return}
+  const inputDir=$('trim-folder').dataset.tmpFolder||folder;
+  const srcFolder=$('trim-folder').dataset.srcFolder||folder;
+  const output=getV('trim-outdir')||srcFolder+'/已处理';
+  const sd=getSkillDir();
+  const action=getV('trim-action')||'remove';
+
+  if(action==='add'){
+    const intro=getV('trim-intro-file')||'';
+    const outro=getV('trim-outro-file')||'';
+    if(!intro&&!outro){alert('请至少指定一个片头或片尾视频');return}
+    let cmd=`python3 "${sd}/scripts/video_process.py" add-intro-outro \\\n  --input "${inputDir}" \\\n  --output "${output}"`;
+    if(intro) cmd+=` \\\n  --intro "${intro}"`;
+    if(outro) cmd+=` \\\n  --outro "${outro}"`;
+    log('trim-log','执行命令:','info');
+    runCmd('trim-log',cmd);
+  } else {
+    let cmd=`python3 "${sd}/scripts/video_process.py" trim \\\n  --input "${inputDir}" \\\n  --output "${output}" \\\n  --start ${getV('trim-start')||0} \\\n  --end ${getV('trim-end')||11} \\\n  --mode ${getV('trim-mode')||'copy'} \\\n  --min-length ${getV('trim-minlen')||5}`;
+    log('trim-log','执行命令:','info');
+    runCmd('trim-log',cmd);
+  }
+}
+
+/* ═══ 通用视频多选 ═══ */
+async function pickVideos(inputId, filelistId){
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.multiple = true;
+  picker.accept = 'video/*,.mp4,.mov,.avi,.mkv,.flv,.wmv,.webm,.ts,.m4v';
+  picker.onchange = async () => {
+    if(!picker.files.length) return;
+    const files = Array.from(picker.files);
+    const fl = $(filelistId);
+    if(fl) fl.innerHTML = '已选择 ' + files.length + ' 个: ' + files.map((f,i) =>
+      `<span style="color:var(--primary)">[${i+1}] ${f.name}</span>`
+    ).join(', ');
+    const input = $(inputId);
+    input.value = '正在解析路径...';
+    try {
+      // Resolve folder path
+      const fileInfos = files.slice(0,3).map(f => ({name:f.name, size:f.size}));
+      const r = await fetch('/api/pick-folder', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({files: fileInfos})
+      });
+      const d = await r.json();
+      if(!d.path){ input.value=''; alert('未能定位路径'); return; }
+      // Create temp dir with only selected files
+      const fileNames = files.map(f => f.name);
+      const r2 = await fetch('/api/prepare-files', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({folder: d.path, files: fileNames})
+      });
+      const d2 = await r2.json();
+      if(d2.path){
+        input.dataset.tmpFolder = d2.path; // actual temp dir for script input
+        input.dataset.srcFolder = d.path;  // original folder for output
+        input.value = d.path;              // show original folder to user
+        saveCache();
+      } else {
+        input.dataset.tmpFolder = '';
+        input.dataset.srcFolder = d.path;
+        input.value = d.path;
+        saveCache();
+      }
+    } catch(e){
+      input.value = '';
+      alert('服务未连接');
+    }
+  };
+  picker.click();
+}
+function pickConcatVideos(){ pickVideos('concat-folder','concat-filelist'); }
+
+function runConcat(){
+  clearLog('concat-log');
+  const folder=getV('concat-folder');
+  if(!folder){alert('请选择视频');return}
+  const inputDir=$('concat-folder').dataset.tmpFolder||folder;
+  const srcFolder=$('concat-folder').dataset.srcFolder||folder;
+  const outdir=getV('concat-outdir')||srcFolder;
+  const outfile=getV('concat-output')||'merged.mp4';
+  const sd=getSkillDir();
+  log('concat-log','执行命令:','info');
+  runCmd('concat-log',`python3 "${sd}/scripts/video_process.py" concat \\\n  --input "${inputDir}" \\\n  --output "${outdir}/${outfile}" \\\n  --method ${getV('concat-method')||'filter'} \\\n  --scale ${getV('concat-scale')||'auto'}`);
+}
+
+/* ═══ Generic tool runner (placeholder tools) ═══ */
+function runTool(name){
+  clearLog(name+'-log');
+  log(name+'-log','此功能暂未实现，等待后续接入。','warn');
+}
+
+/* ═══ Delogo / Crop / Blur helpers ═══ */
+function updateDelogoCoords(){
+  const o=getV('delogo-orient');
+  if(o==='portrait'||o==='auto'){setV('delogo-tl','1:1:304:160');setV('delogo-tr','415:1:304:160');setV('delogo-bl','1:1119:304:160');setV('delogo-br','415:1119:304:160')}
+  else{setV('delogo-tl','1:1:305:160');setV('delogo-tr','974:1:305:160');setV('delogo-bl','1:559:305:160');setV('delogo-br','974:559:305:160')}
+}
+function updateCropSize(){const m={auto:'自动',portrait:'720×960',landscape:'670×720'};setV('crop-size',m[getV('crop-orient')])}
+function updateBlurTarget(){const m={auto:'自动',landscape:'1280×720',portrait:'720×1280'};setV('blur-target',m[getV('blur-orient')])}
+
+/* ═══ Publish: Queue System ═══ */
+const pubQueue=[];
+let queueId=0;
+
+async function pubAddToQueue(){
+  const folder=getV('pub-folder');
+  if(!folder){alert('请输入素材文件夹路径');return}
+  const tpl=getV('pub-tpl-editor');
+  let uploadCode = -1;
+
+  queueId++;
+  const post={
+    id:queueId, folder, tpl,
+    status:'pending' // pending → uploading → slicing → ready → drafting → drafted
+  };
+  pubQueue.push(post);
+  renderQueue();
+
+  const sd=getSkillDir();
+  const baseUrl=getV('pub-baseurl');
+  const projCode=getV('pub-projcode');
+
+  log('pub-log',`\n═══ 帖子 #${post.id}: ${folder} ═══`,'info');
+
+  post.status='uploading'; renderQueue();
+  log('pub-log',`\n[步骤1] 上传视频:`,'info');
+  uploadCode = await runCmd('pub-log',`python3 "${sd}/scripts/publish_api.py" \\\n  --base-url "${baseUrl}" --project-code "${projCode}" \\\n  --action upload-video --folder "${folder}"`);
+
+  if(uploadCode === 0){
+    post.status='slicing'; renderQueue();
+    log('pub-log',`\n[#${post.id}] 视频已上传，请去平台后台确认切片完成后，点击队列中的「✅ 确认切片完成」按钮。`,'warn');
+  } else {
+    post.status='pending'; renderQueue();
+    log('pub-log',`\n[#${post.id}] ❌ 视频上传失败，请检查路径和网络后重试。`,'error');
+  }
+}
+
+function renderQueue(){
+  const tbody=$('pub-queue-body');
+  const table=$('pub-queue-table');
+  const empty=$('pub-queue-empty');
+  const batch=$('pub-batch-bar');
+  $('queue-count').textContent=pubQueue.length+' 个帖子';
+  if(pubQueue.length===0){table.style.display='none';empty.style.display='';batch.style.display='none';return}
+  table.style.display='';empty.style.display='none';batch.style.display='';
+  tbody.innerHTML=pubQueue.map(p=>{
+    const statusMap={
+      pending:`<span class="badge badge-primary">排队中</span>`,
+      uploading:`<span class="badge badge-orange">上传中</span>`,
+      slicing:`<span class="badge badge-orange">等待切片</span>`,
+      ready:`<span class="badge badge-green">切片完成</span>`,
+      drafting:`<span class="badge badge-orange">正在保存草稿...</span>`,
+      drafted:`<span class="badge badge-green">已存草稿</span>`,
+    };
+    const actions=[];
+    if(p.status==='slicing') actions.push(`<button class="btn btn-green btn-sm" onclick="pubConfirmSlice(${p.id})">✅ 确认切片完成</button>`);
+    if(p.status==='ready') actions.push(`<button class="btn btn-primary btn-sm" onclick="pubDraftOne(${p.id})">📝 存草稿</button>`);
+    if(p.status!=='drafted') actions.push(`<button class="btn btn-red btn-sm" onclick="pubRemoveFromQueue(${p.id})">✕</button>`);
+    return `<tr>
+      <td>${p.id}</td>
+      <td style="color:var(--t1);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.folder}</td>
+      <td>${statusMap[p.status]||p.status}</td>
+      <td>${actions.join(' ')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function pubConfirmSlice(id){
+  const p=pubQueue.find(x=>x.id===id);
+  if(!p)return;
+  p.status='ready';
+  renderQueue();
+  log('pub-log',`[#${p.id}] 切片已确认，可以点「存草稿」生成发布命令`,'ok');
+}
+
+async function pubDraftOne(id){
+  const p=pubQueue.find(x=>x.id===id);
+  if(!p)return;
+  p.status='drafting';
+  renderQueue();
+  const sd=getSkillDir();
+  const baseUrl=getV('pub-baseurl');
+  const projCode=getV('pub-projcode');
+  const srcFolder=p.folder;
+  const tplArg=p.tpl?` --layout-template "${p.tpl.replace(/"/g,'\\"').replace(/\n/g,'\\n')}"` :'';
+  log('pub-log',`\n[#${p.id}] 存草稿命令:`,'ok');
+  await runCmd('pub-log',`python3 "${sd}/scripts/publish_api.py" \\\n  --base-url "${baseUrl}" \\\n  --project-code "${projCode}" \\\n  --action publish \\\n  --folder "${srcFolder}"${tplArg}`);
+  p.status='drafted';
+  renderQueue();
+}
+
+async function pubBatchDraft(){
+  const ready=pubQueue.filter(p=>p.status==='ready');
+  if(ready.length===0){alert('没有切片完成的帖子');return}
+  for(const p of ready){ await pubDraftOne(p.id); }
+}
+
+function pubRemoveFromQueue(id){
+  const idx=pubQueue.findIndex(x=>x.id===id);
+  if(idx>=0)pubQueue.splice(idx,1);
+  renderQueue();
+}
+
+function pubClearQueue(){
+  pubQueue.length=0;queueId=0;
+  renderQueue();clearLog('pub-log');
+}
+
+/* ═══ Layout Presets ═══ */
+const PRESETS={
+  'img-interleave':`正文\n图片1-3\n\n## 小标题\n正文\n图片4-6\n\n## 小标题\n正文\n视频`,
+  'vid-list':`正文\n图片1-3\n\n## 小标题\n视频1\n\n## 小标题\n视频2\n\n## 小标题\n视频3`,
+  'mixed':`正文\n图片1-3\n\n## 小标题\n正文\n视频1\n\n## 小标题\n正文\n图片4-6\n视频2`
+};
+function loadLayoutPreset(){
+  const k=getV('pub-tpl-preset');
+  if(PRESETS[k])setV('pub-tpl-editor',PRESETS[k]);
+}
+
+/* ═══ Publish Login ═══ */
+let _pubLoggedIn = false;
+
+function pubLogin(){
+  clearLog('pub-log');
+  const st=$('pub-login-status');
+  saveAccount();
+  const sd=getSkillDir();
+  const baseUrl=getV('pub-baseurl');
+  const projCode=getV('pub-projcode');
+  const user=getV('pub-username');
+  const pass=getV('pub-password');
+  if(!user||!pass){alert('请输入用户名和密码');return}
+  st.style.color='var(--orange)';st.textContent='登录中...';
+  log('pub-log','登录命令:','info');
+  runCmd('pub-log',`python3 "${sd}/scripts/publish_api.py" \\\n  --base-url "${baseUrl}" \\\n  --project-code "${projCode}" \\\n  --username "${user}" \\\n  --password "${pass}" \\\n  --action login`).then(()=>{
+    _pubLoggedIn = true;
+    st.style.color='var(--green)';st.textContent='已登录 (凭据已保存, 后续操作自动登录)';
+  });
+}
+
+// Show login state on page load based on saved credentials
+function checkSavedLogin(){
+  const st=$('pub-login-status');
+  const user=getV('pub-username');
+  const pass=getV('pub-password');
+  if(user && pass){
+    st.style.color='var(--primary)';st.textContent='已保存凭据, 操作时自动登录';
+  }
+}
+
+
+/* ═══ 文件夹拖入识别路径 + 📁选择按钮 ═══ */
+async function pickFolder(inputId){
+  // User picks a FOLDER → browser returns files inside it → resolve absolute path via server
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.setAttribute('webkitdirectory', '');
+  picker.onchange = async () => {
+    if(!picker.files.length) return;
+    const input = $(inputId);
+    if(!input) return;
+    // webkitRelativePath = "folderName/file.jpg" — extract folder name
+    const firstFile = picker.files[0];
+    const relPath = firstFile.webkitRelativePath || '';
+    const folderName = relPath.split('/')[0] || firstFile.name;
+    input.value = '正在解析路径...';
+    try {
+      // First try: resolve by folder name (most reliable — returns the selected folder, not a subfolder)
+      const r1 = await fetch('/api/find-path', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: folderName})
+      });
+      const d1 = await r1.json();
+      if(d1.path){
+        // find-path returns the parent if it found a file; for directories it returns the dir itself
+        // We want the directory named folderName, so verify the path ends with it
+        const resolved = d1.file || d1.path;
+        if(resolved.endsWith('/'+folderName) || resolved.endsWith('/'+folderName+'/')){
+          input.value = resolved.replace(/\/$/,'');
+          saveCache();
+          return;
+        }
+        // The resolved path contains the folder
+        input.value = d1.path;
+        saveCache();
+        return;
+      }
+      // Fallback: resolve via file name+size (picks the first file's parent)
+      // Only use root-level files to avoid resolving to a subfolder
+      const rootFiles = Array.from(picker.files).filter(f => {
+        const rel = f.webkitRelativePath || '';
+        const parts = rel.split('/');
+        return parts.length === 2; // folderName/filename (root-level file)
+      });
+      const filesToSend = (rootFiles.length > 0 ? rootFiles : Array.from(picker.files)).slice(0, 3);
+      const fileInfos = filesToSend.map(f => ({name: f.name, size: f.size}));
+      const r2 = await fetch('/api/pick-folder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({files: fileInfos})
+      });
+      const d2 = await r2.json();
+      if(d2.path){
+        input.value = d2.path;
+        saveCache();
+        return;
+      }
+      input.value = '';
+      alert('未能定位文件夹路径，请手动粘贴完整路径');
+    } catch(e){
+      input.value = '';
+      alert('服务未连接');
+    }
+  };
+  picker.click();
+}
+
+async function resolveDroppedFile(name, input){
+  input.value = '正在解析路径...';
+  try {
+    const r = await fetch('/api/find-path', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name})
+    });
+    const d = await r.json();
+    if(d.path){
+      input.value = d.path;
+      input.dispatchEvent(new Event('change'));
+      saveCache();
+      return;
+    }
+  } catch(e){}
+  input.value = '';
+  input.placeholder = '未找到，请手动粘贴完整路径';
+}
+
+function getDropName(e){
+  const items = e.dataTransfer.items;
+  if(items && items.length > 0){
+    const entry = items[0].webkitGetAsEntry && items[0].webkitGetAsEntry();
+    if(entry) return entry.name;
+  }
+  const files = e.dataTransfer.files;
+  if(files && files.length > 0) return files[0].name;
+  return '';
+}
+
+/* ═══ 单文件选择（水印等） ═══ */
+async function pickFile(inputId, acceptTypes){
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = acceptTypes || '*';
+  picker.onchange = async () => {
+    if(!picker.files.length) return;
+    const f = picker.files[0];
+    const input = $(inputId);
+    if(!input) return;
+    input.value = '正在解析路径...';
+    try {
+      // Try resolving path by name+size
+      const r = await fetch('/api/pick-folder', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({files: [{name: f.name, size: f.size}]})
+      });
+      const d = await r.json();
+      if(d.file && !d.file.endsWith('/')){
+        input.value = d.file;
+        saveCache();
+        return;
+      }
+    } catch(e){}
+    // Fallback: upload file to server as base64
+    try {
+      const b64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(f);
+      });
+      const r2 = await fetch('/api/upload-file', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: f.name, data: b64})
+      });
+      const d2 = await r2.json();
+      if(d2.file){
+        input.value = d2.file;
+        saveCache();
+        return;
+      }
+    } catch(e){}
+    input.value = '';
+    alert('未能解析文件路径，请手动粘贴完整路径');
+  };
+  picker.click();
+}
+
+function setupFolderDrop(){
+  document.querySelectorAll('input[type="text"]').forEach(input=>{
+    const ph=(input.placeholder||'').toLowerCase();
+    const id=(input.id||'').toLowerCase();
+    if(ph.includes('文件夹')||ph.includes('路径')||ph.includes('/path')||id.includes('folder')||id.includes('outdir')||id.includes('-file')||id.includes('-wmfile')||id.endsWith('file')||id.includes('savepath')||id.includes('output')){
+      // Skip inputs that already have a dedicated 📁 button in their parent (e.g. video pickers)
+      const parentBtns = input.parentElement.querySelectorAll('button');
+      const hasFolderBtn = Array.from(parentBtns).some(b => b.textContent.includes('📁'));
+      if(hasFolderBtn){
+        // Only add drag-drop support, no duplicate 📁 button
+        input.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();input.style.borderColor='var(--primary)';input.style.boxShadow='0 0 0 2px rgba(79,195,247,.25)'});
+        input.addEventListener('dragleave',()=>{input.style.borderColor='';input.style.boxShadow=''});
+        input.addEventListener('drop',e=>{
+          e.preventDefault();e.stopPropagation();
+          input.style.borderColor='';input.style.boxShadow='';
+          const name = getDropName(e);
+          if(name) resolveDroppedFile(name, input);
+        });
+        return;
+      }
+      // Add 📁 picker button — wrap input in a relative container for stable positioning
+      const isFileInput = id.includes('-file') || id.includes('-wmfile') || id.endsWith('file');
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText='position:relative;display:flex;align-items:center';
+      input.parentElement.insertBefore(wrapper, input);
+      wrapper.appendChild(input);
+      input.style.paddingRight='30px';
+      input.style.width='100%';
+      const btn=document.createElement('button');
+      btn.textContent='📁';
+      btn.title= isFileInput ? '选择文件' : '选择文件夹';
+      btn.style.cssText='position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;padding:2px 4px;opacity:0.6;line-height:1';
+      btn.onmouseenter=()=>btn.style.opacity='1';
+      btn.onmouseleave=()=>btn.style.opacity='0.6';
+      if(isFileInput){
+        const accept = id.includes('wm') ? 'image/png,.png,.mov' : '*';
+        btn.onclick=(e)=>{e.preventDefault();pickFile(input.id, accept)};
+      } else {
+        btn.onclick=(e)=>{e.preventDefault();pickFolder(input.id)};
+      }
+      wrapper.appendChild(btn);
+
+      input.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();input.style.borderColor='var(--primary)';input.style.boxShadow='0 0 0 2px rgba(79,195,247,.25)'});
+      input.addEventListener('dragleave',()=>{input.style.borderColor='';input.style.boxShadow=''});
+      input.addEventListener('drop',e=>{
+        e.preventDefault();e.stopPropagation();
+        input.style.borderColor='';input.style.boxShadow='';
+        const name = getDropName(e);
+        if(name) resolveDroppedFile(name, input);
+      });
+    }
+  });
+}
+setupFolderDrop();
+
+/* ═══ 账号记忆 (localStorage) ═══ */
+const ACCT_KEYS=['pub-baseurl','pub-projcode','pub-username','pub-password'];
+
+/* ═══ 常用配置缓存 (localStorage) ═══ */
+const CACHE_KEYS=[
+  'imgwm-file','imgwm-file-light','vidwm-wmfile',
+  'imgwm-folder','imgwm-outdir','vidwm-folder','vidwm-outdir',
+  'cover-folder','cover-output','rename-folder',
+  'concat-folder','concat-outdir',
+  'delogo-folder','delogo-outdir','crop-folder','crop-outdir',
+  'blur-folder','blur-outdir','trim-folder','trim-outdir',
+  'pub-folder',
+  'imgwm-wmwidth','imgwm-imgwidth','imgwm-margin','imgwm-position','imgwm-opacity',
+  'vidwm-mode','vidwm-fixed-pos','vidwm-wmfile2','vidwm-scale-landscape','vidwm-scale-portrait','vidwm-scale','vidwm-codec','vidwm-bitrate','vidwm-fps',
+  'delogo-codec','delogo-bitrate','crop-codec','crop-bitrate',
+  'trim-start','trim-end','trim-mode',
+  'trim-intro-file','trim-outro-file','trim-action',
+  'cw-author','cw-style',
+  'cw-minlen','cw-maxlen','cw-kwcount','cw-bodylen','cw-paragraphs',
+  'cw-savepath',
+  'cover-layout','cover-headmargin','cover-quality',
+  'rename-prefix','rename-start','rename-digits','rename-sep',
+  'concat-method','concat-scale',
+  'blur-orient','blur-strength','blur-bgscale','blur-codec','blur-bitrate',
+  'trim-minlen'
+];
+
+function saveAccount(){
+  const data={};
+  ACCT_KEYS.forEach(k=>{const el=$(k);if(el)data[k]=el.value});
+  try{localStorage.setItem('editor_workstation_account',JSON.stringify(data))}catch(e){}
+}
+function saveCache(){
+  const data={};
+  CACHE_KEYS.forEach(k=>{const el=$(k);if(el)data[k]=el.value});
+  try{localStorage.setItem('editor_workstation_cache',JSON.stringify(data))}catch(e){}
+}
+function loadAccount(){
+  try{
+    const raw=localStorage.getItem('editor_workstation_account');
+    if(!raw)return;
+    const data=JSON.parse(raw);
+    ACCT_KEYS.forEach(k=>{if(data[k])setV(k,data[k])});
+  }catch(e){}
+}
+function loadCache(){
+  try{
+    const raw=localStorage.getItem('editor_workstation_cache');
+    if(!raw)return;
+    const data=JSON.parse(raw);
+    CACHE_KEYS.forEach(k=>{if(data[k])setV(k,data[k])});
+  }catch(e){}
+}
+loadAccount();
+loadCache();
+// Migrate stale bitrate cache values to 2M default
+['vidwm-bitrate','delogo-bitrate','crop-bitrate','blur-bitrate'].forEach(k=>{
+  const el=$(k);
+  if(el && el.value && el.value!=='2M') el.value='2M';
+});
+// Migrate landscape watermark scale from old default 15 to 35
+(function(){const el=$('vidwm-scale-landscape');if(el && el.value==='15')el.value='35'})();
+// Migrate concat defaults: demuxer→filter, first→auto
+(function(){
+  const m=$('concat-method'), s=$('concat-scale');
+  if(m && m.value==='demuxer') m.value='filter';
+  if(s && (s.value==='first')) s.value='auto';
+})();
+checkServer();
+checkSavedLogin();
+setInterval(checkServer, 15000); // Re-check every 15s
+
+ACCT_KEYS.forEach(k=>{const el=$(k);if(el)el.addEventListener('blur',saveAccount)});
+CACHE_KEYS.forEach(k=>{
+  const el=$(k);
+  if(!el)return;
+  el.addEventListener('blur',saveCache);
+  if(el.tagName==='SELECT')el.addEventListener('change',saveCache);
+});
+</script>
+</body>
+</html>
