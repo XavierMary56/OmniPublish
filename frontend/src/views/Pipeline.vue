@@ -147,7 +147,21 @@ const canPublish = computed(() => {
 })
 
 async function handleGenerateCopy() {
-  await store.generateCopy(copyForm.value)
+  if (!copyForm.value.protagonist.trim()) {
+    alert('请填写主角')
+    return
+  }
+  if (!copyForm.value.event.trim()) {
+    alert('请填写事件')
+    return
+  }
+  try {
+    await store.generateCopy(copyForm.value)
+  } catch (e: any) {
+    const msg = e.response?.data?.detail || e.message || '文案生成请求失败'
+    alert(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    store.isGenerating = false
+  }
 }
 
 async function handleConfirmCopy() {
@@ -437,9 +451,14 @@ function handleDiscardDraft() {
                   </span>
                 </div>
               </div>
-              <button class="btn btn-primary" :disabled="store.isGenerating" @click="handleGenerateCopy">
+              <button class="btn btn-primary"
+                      :disabled="store.isGenerating || !copyForm.protagonist.trim() || !copyForm.event.trim()"
+                      @click="handleGenerateCopy">
                 {{ store.isGenerating ? '⏳ 生成中...' : '🤖 AI 生成文案' }}
               </button>
+              <span v-if="!copyForm.protagonist.trim() || !copyForm.event.trim()" style="font-size:11px;color:var(--orange);margin-left:8px">
+                ← 请先填写主角和事件
+              </span>
             </div>
             <div style="flex:1;min-width:280px">
               <h4 style="margin-bottom:12px;font-size:14px">生成结果</h4>
