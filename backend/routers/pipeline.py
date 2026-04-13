@@ -7,6 +7,7 @@ import shutil
 import uuid
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
+from pydantic import BaseModel, Field
 from models.task import (
     CreateTaskRequest, GenerateCopyRequest, ConfirmCopyRequest,
     ConfirmRenameRequest, ConfirmCoverRequest, PublishRequest,
@@ -93,13 +94,16 @@ async def upload_files(
 # 本地路径直接引用（容器挂载目录）
 # ══════════════════════════════════════════
 
+class LocalPathRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+
 @router.post("/upload/local-path")
 async def use_local_path(
-    req: dict,
+    req: LocalPathRequest,
     user: UserInfo = Depends(get_current_user),
 ):
     """直接引用容器内的本地路径（通过 volume 挂载），无需上传。"""
-    local_path = req.get("path", "").strip()
+    local_path = req.path.strip()
     if not local_path:
         raise HTTPException(status_code=400, detail="路径不能为空")
 
