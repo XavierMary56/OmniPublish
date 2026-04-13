@@ -13,6 +13,7 @@ const platformSearch = ref('')
 const folder = ref('')
 const isDragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const folderInput = ref<HTMLInputElement | null>(null)
 
 // Step 2 state
 const copyForm = ref({ protagonist: '', event: '', photos: '', video_desc: '', style: '反转打脸风', author: '编辑', categories: [] as string[] })
@@ -99,6 +100,11 @@ function onFileSelect(e: Event) {
     store.uploadFiles(Array.from(input.files))
     input.value = ''
   }
+}
+
+function triggerUpload() {
+  // 默认选文件夹（webkitdirectory）
+  folderInput.value?.click()
 }
 
 // Step navigation
@@ -271,8 +277,9 @@ function handleDiscardDraft() {
               <div class="upload-zone"
                    :class="{ dragging: isDragging, uploaded: store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0 }"
                    @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
-                   @click="fileInput?.click()">
+                   @click="triggerUpload()">
                 <input ref="fileInput" type="file" multiple accept="image/*,video/*,.txt" style="display:none" @change="onFileSelect" />
+                <input ref="folderInput" type="file" webkitdirectory style="display:none" @change="onFileSelect" />
 
                 <!-- 上传中 -->
                 <template v-if="store.isUploading">

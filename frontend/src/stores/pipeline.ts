@@ -93,11 +93,14 @@ export const usePipelineStore = defineStore('pipeline', () => {
     for (const file of files) {
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
-      // 初始化分片会话
-      const initData = await api('POST', '/pipeline/upload/init', null)
+      // 初始化分片会话（用 query params，不用 JSON body）
       const initRes = await http.post('/pipeline/upload/init', null, {
-        headers: { 'Content-Type': undefined },
-        params: { filename: file.name, total_size: file.size, total_chunks: totalChunks, folder_id: folderId.value },
+        params: {
+          filename: file.name,
+          total_size: file.size,
+          total_chunks: totalChunks,
+          folder_id: folderId.value || '',
+        },
       })
       const init = initRes.data?.data ?? initRes.data
       const uploadId = init.upload_id
@@ -118,25 +121,23 @@ export const usePipelineStore = defineStore('pipeline', () => {
         const chunkForm = new FormData()
         chunkForm.append('chunk', blob, `chunk_${i}`)
 
-        await http.post(`/pipeline/upload/chunk?upload_id=${uploadId}&chunk_index=${i}`, chunkForm, {
+        await http.post(`/pipeline/upload/chunk`, chunkForm, {
           headers: { 'Content-Type': undefined },
+          params: { upload_id: uploadId, chunk_index: i },
         })
         uploaded += (end - start)
         uploadProgress.value = Math.round((uploaded / totalSize) * 100)
       }
 
       // 合并分片
-      await http.post(`/pipeline/upload/complete?upload_id=${uploadId}`)
-    }
-
-    // 最终扫描
-    if (folderId.value) {
-      const scanRes = await api('POST', `/pipeline/upload`, null)
-      // 用直传接口最终获取 manifest（或者重新扫描）
+      const completeRes = await http.post('/pipeline/upload/complete', null, {
+        params: { upload_id: uploadId },
+      })
+      const completeData = completeRes.data?.data ?? completeRes.data
+      folderPath.value = completeData.folder_path || folderPath.value
+      fileManifest.value = completeData.file_manifest || fileManifest.value
     }
     uploadProgress.value = 100
-    // 用 folder_path 重新获取 manifest
-    const lastComplete = await http.post(`/pipeline/upload/complete?upload_id=_rescan`, null).catch(() => null)
   }
 
   /** 保存草稿到 localStorage */
