@@ -80,6 +80,7 @@ async def list_tasks(
         items = []
         for row in rows:
             item = dict(row)
+            item['created_by'] = item.get('editor_name') or item.get('created_by', '')
             # 解析 JSON 字段
             for field in ["target_platforms", "file_manifest"]:
                 if item.get(field):
@@ -87,6 +88,25 @@ async def list_tasks(
                         item[field] = json.loads(item[field])
                     except (json.JSONDecodeError, TypeError):
                         pass
+
+            # 加载步骤状态
+            step_rows = await conn.fetch(
+                "SELECT step, status FROM task_steps WHERE task_id = $1 ORDER BY step",
+                item["id"],
+            )
+            item["steps"] = [dict(s) for s in step_rows]
+
+            # 加载平台子任务
+            pt_rows = await conn.fetch(
+                """SELECT pt.platform_id, p.name as platform_name,
+                          pt.wm_status, pt.upload_status, pt.publish_status, pt.publish_error
+                   FROM platform_tasks pt
+                   JOIN platforms p ON pt.platform_id = p.id
+                   WHERE pt.task_id = $1""",
+                item["id"],
+            )
+            item["platform_tasks"] = [dict(pt) for pt in pt_rows]
+
             items.append(item)
 
         return ApiResponse.success(data={

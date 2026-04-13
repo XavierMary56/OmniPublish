@@ -199,22 +199,36 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (draft.copyResult) copyResult.value = draft.copyResult
       if (draft.renamePrefix) renamePrefix.value = draft.renamePrefix
 
+      // 验证服务端任务是否还存在
+      if (draft.taskId) {
+        try {
+          await api('GET', `/pipeline/${draft.taskId}`)
+        } catch {
+          // 任务不存在（404），清除 taskId 相关状态
+          taskId.value = null
+          taskNo.value = ''
+          currentStep.value = 0
+          status.value = 'draft'
+        }
+      }
+
       // 验证服务端素材是否还在
       if (draft.folderId) {
         try {
           const check = await api('GET', `/pipeline/upload/check/${draft.folderId}`)
           if (check.exists) {
-            // 素材还在，用服务端最新的 manifest
             folderPath.value = check.folder_path
             fileManifest.value = check.file_manifest
           } else {
-            // 素材已失效，清除文件相关状态，保留其他草稿
             folderPath.value = ''
             folderId.value = ''
             fileManifest.value = { images: [], videos: [], txts: [] }
           }
         } catch {
-          // 检查失败不阻塞
+          // 检查失败，清除文件状态避免残留
+          folderPath.value = ''
+          folderId.value = ''
+          fileManifest.value = { images: [], videos: [], txts: [] }
         }
       }
       return true

@@ -125,7 +125,10 @@ onMounted(load)
            class="config-card"
            :style="{opacity: p.is_active === 0 ? 0.5 : 1}">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:14px;font-weight:700">{{ p.name }}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:10px;color:var(--t3);background:var(--bg4);padding:1px 6px;border-radius:4px">ID:{{ p.id }}</span>
+            <span style="font-size:14px;font-weight:700">{{ p.name }}</span>
+          </div>
           <div style="display:flex;align-items:center;gap:6px">
             <span class="badge" :class="p.is_active !== 0 ? 'badge-green' : 'badge-red'" style="font-size:10px;padding:1px 8px">{{ p.is_active !== 0 ? '启用' : '关闭' }}</span>
             <span class="badge badge-primary" style="font-size:10px;padding:1px 8px">{{ p.dept }}</span>
