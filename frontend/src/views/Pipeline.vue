@@ -215,6 +215,13 @@ onMounted(async () => {
     } else {
       store.reset()
     }
+    // 获取预估任务编号（新建时显示）
+    if (!store.taskNo) {
+      try {
+        const res = await api('GET', '/pipeline/next-no')
+        store.taskNo = res.task_no
+      } catch {}
+    }
   }
 })
 
@@ -235,9 +242,17 @@ function handleDiscardDraft() {
     <div class="wizard-wrap">
       <!-- Header -->
       <div style="padding:20px 24px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">
-        <h3 style="font-size:16px;font-weight:700">{{ store.taskNo || '新建发帖任务' }}</h3>
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="font-size:16px;font-weight:700">
+            {{ store.taskId ? '发帖任务' : '新建发帖任务' }}
+            <span style="color:var(--primary)">{{ store.taskNo || '' }}</span>
+          </h3>
+          <span v-if="store.taskId" style="font-size:11px;color:var(--t3);background:var(--bg4);padding:2px 8px;border-radius:4px">
+            ID:{{ store.taskId }}
+          </span>
+        </div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span class="badge badge-primary">流水线模式</span>
+          <span class="badge badge-primary" style="font-size:10px">● 流水线模式</span>
           <button class="btn btn-ghost btn-sm" @click="handleSaveDraft">💾 保存草稿</button>
         </div>
       </div>

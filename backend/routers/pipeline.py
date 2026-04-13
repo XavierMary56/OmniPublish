@@ -31,6 +31,16 @@ os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 
 # ══════════════════════════════════════════
+# 获取下一个任务编号（预估）
+# ══════════════════════════════════════════
+
+@router.get("/next-no")
+async def get_next_no(user: UserInfo = Depends(get_current_user)):
+    """获取预估的下一个任务编号（用于新建页面显示）。"""
+    task_no = await get_next_task_no()
+    return ApiResponse.success(data={"task_no": task_no})
+
+
 # 文件上传接口
 # ══════════════════════════════════════════
 
