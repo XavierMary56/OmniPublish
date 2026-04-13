@@ -16,6 +16,36 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const folderInput = ref<HTMLInputElement | null>(null)
 
 const localPathInput = ref('')
+const wmPlan = ref<any[]>([])
+
+// 平台 ID → 名称映射（从平台列表构建）
+const platformNameMap = computed(() => {
+  const map: Record<number, string> = {}
+  for (const p of platforms.value) {
+    map[p.id] = p.name
+  }
+  return map
+})
+
+async function retryPlatform(platformId: number) {
+  if (!store.taskId) return
+  try {
+    await api('POST', `/pipeline/${store.taskId}/step/6/retry`, { platform_id: platformId })
+  } catch (e: any) {
+    alert(e.response?.data?.detail || '重试失败')
+  }
+}
+
+// 封面图片 URL 转换（容器路径 → 浏览器可访问路径）
+function coverUrl(path: string): string {
+  // /app/backend/uploads/tasks/xxx/cover_0.jpg → /uploads/tasks/xxx/cover_0.jpg
+  if (path.startsWith('/app/backend/uploads/')) {
+    return path.replace('/app/backend/uploads/', '/uploads/')
+  }
+  if (path.startsWith('/uploads/')) return path
+  // 相对路径
+  return `/uploads/${path}`
+}
 
 // Step 2 state
 const copyForm = ref({ protagonist: '', event: '', photos: '', video_desc: '', style: '反转打脸风', author: '编辑', categories: [] as string[] })
@@ -275,6 +305,17 @@ watch(() => store.copyResult, (r) => {
     editTitle.value = r.title
     editKeywords.value = r.keywords
     editBody.value = r.body
+  }
+})
+
+// 监听步骤变化，加载对应数据
+watch(() => store.currentStep, async (step) => {
+  // 进入 Step 5 时加载水印方案预览
+  if (step === 4 && store.taskId) {
+    try {
+      const plan = await api('GET', `/pipeline/${store.taskId}/step/5/plan`)
+      wmPlan.value = plan.platforms || plan || []
+    } catch { wmPlan.value = [] }
   }
 })
 
@@ -637,10 +678,13 @@ function handleDiscardDraft() {
           <button class="btn btn-primary" style="margin-bottom:14px" @click="handleGenerateCover">🖼️ 生成封面候选</button>
           <div v-if="store.coverCandidates.length" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
             <div v-for="(c, i) in store.coverCandidates" :key="i"
-                 style="border-radius:8px;overflow:hidden;cursor:pointer;position:relative;height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--t3);font-size:12px"
+                 style="border-radius:8px;overflow:hidden;cursor:pointer;position:relative;background:var(--bg3)"
                  :style="{border: store.selectedCover === i ? '2px solid var(--primary)' : '2px solid var(--bd)'}"
                  @click="store.selectedCover = i">
-              候选 {{ 'ABC'[i] }}
+              <img :src="coverUrl(c)" :alt="'候选 ' + 'ABC'[i]"
+                   style="width:100%;height:140px;object-fit:cover;display:block"
+                   @error="($event.target as HTMLImageElement).style.display='none'" />
+              <div style="padding:6px 8px;font-size:11px;color:var(--t2);text-align:center">候选 {{ 'ABC'[i] }}</div>
               <div v-if="store.selectedCover === i" style="position:absolute;top:6px;right:6px;background:var(--primary);color:#000;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700">已选</div>
             </div>
           </div>
@@ -651,9 +695,28 @@ function handleDiscardDraft() {
 
         <!-- Step 5: 水印 -->
         <div v-if="store.currentStep === 4">
-          <h4 style="margin-bottom:12px;font-size:14px">水印处理</h4>
+          <h4 style="margin-bottom:12px;font-size:14px">水印处理 <span style="font-size:12px;color:var(--t2);font-weight:400">— 根据已选平台自动匹配水印配置</span></h4>
           <div v-if="Object.keys(store.wmProgress).length === 0">
-            <p style="font-size:12px;color:var(--t2);margin-bottom:14px">确认后系统将为各平台并行添加水印。</p>
+            <p style="font-size:12px;color:var(--t2);margin-bottom:14px">以下是各目标平台的水印方案，确认后系统将自动为图片和视频添加对应水印。</p>
+
+            <!-- 水印方案预览卡片 -->
+            <div v-if="wmPlan.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:16px">
+              <div v-for="p in wmPlan" :key="p.platform_id" style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <span style="font-size:13px;font-weight:600">{{ p.name }}</span>
+                  <span class="badge badge-primary" style="font-size:10px;padding:1px 6px">{{ p.has_video_wm ? '图片+视频' : '仅图片' }}</span>
+                </div>
+                <div style="font-size:11px;color:var(--t2);line-height:1.8">
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>图片水印</span><span style="color:var(--t1)">{{ p.wm_image || '无' }}</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印位置</span><span style="color:var(--t1)">{{ p.wm_position || '右下角' }}</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印宽度</span><span style="color:var(--t1)">{{ p.wm_width || 264 }}px</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:12px 16px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2);margin-bottom:14px">
+              💡 共 {{ store.selectedPlatforms.length }} 个平台 · 预计耗时 ~{{ Math.max(1, store.selectedPlatforms.length) }} 分钟
+            </div>
             <button class="btn btn-green" @click="handleConfirmWatermark">✅ 确认水印方案，开始处理 →</button>
           </div>
           <div v-else style="display:flex;flex-direction:column;gap:10px">
@@ -671,22 +734,37 @@ function handleDiscardDraft() {
 
         <!-- Step 6: 发布 -->
         <div v-if="store.currentStep === 5">
-          <h4 style="margin-bottom:12px;font-size:14px">上传 & 发布</h4>
-          <div v-if="Object.keys(store.publishStatus).length === 0" style="color:var(--t3);padding:20px">等待水印处理完成…</div>
+          <h4 style="margin-bottom:12px;font-size:14px">上传 & 发布 <span style="font-size:12px;color:var(--t2);font-weight:400">— 多平台并行上传，切片完成后逐一发布</span></h4>
+          <div v-if="Object.keys(store.publishStatus).length === 0" style="color:var(--t3);padding:20px;text-align:center">
+            <div style="font-size:24px;margin-bottom:8px">⏳</div>
+            等待水印处理完成后自动进入发布…
+          </div>
           <div v-else style="display:flex;flex-direction:column;gap:10px">
             <div v-for="(info, pid) in store.publishStatus" :key="pid"
-                 style="background:var(--bg3);border-radius:8px;padding:14px"
-                 :style="{borderLeft: info.status==='published'?'3px solid var(--green)':info.status==='failed'?'3px solid var(--red)':'3px solid var(--bd)'}">
-              <div style="display:flex;align-items:center;justify-content:space-between">
-                <span style="font-weight:600">平台 {{ pid }}</span>
-                <span class="badge" :class="info.status==='published'?'badge-green':info.status==='failed'?'badge-red':'badge-primary'" style="font-size:10px">{{ info.status }}</span>
+                 style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span class="badge" :class="info.status==='published'?'badge-green':info.status==='failed'?'badge-red':info.status==='publishing'?'badge-primary':'badge-plain'" style="font-size:10px;min-width:60px;justify-content:center">
+                    {{ platformNameMap[pid] || `平台 ${pid}` }}
+                  </span>
+                  <span style="font-size:12px;font-weight:600" :style="{color: info.status==='published'?'var(--green)':info.status==='failed'?'var(--red)':info.status==='publishing'?'var(--primary)':'var(--t3)'}">
+                    {{ info.status === 'published' ? '✅ 发布成功' : info.status === 'failed' ? '❌ 发布失败' : info.status === 'publishing' ? '⏳ 发布中...' : '排队等待' }}
+                  </span>
+                </div>
+                <button v-if="info.status === 'failed'" class="btn btn-sm" style="color:var(--orange);border:1px solid var(--orange)"
+                        @click="retryPlatform(Number(pid))">🔄 重试</button>
               </div>
-              <div v-if="info.error" style="font-size:11px;color:var(--red);margin-top:6px">{{ info.error }}</div>
+              <div v-if="info.progress !== undefined && info.status === 'publishing'" class="progress-bar" style="height:6px;margin-bottom:6px">
+                <div class="progress-fill" :style="{width:info.progress+'%',background:'var(--primary)'}" />
+              </div>
+              <div v-if="info.error" style="font-size:11px;color:var(--red);margin-top:4px;padding:6px 8px;background:rgba(239,83,80,.08);border-radius:4px">{{ info.error }}</div>
             </div>
           </div>
           <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
             <button class="btn btn-green btn-lg" :disabled="!canPublish" @click="handlePublish">🚀 一键发布所有已就绪平台</button>
-            <span v-if="!canPublish" style="font-size:12px;color:var(--t3)">等待平台就绪中…</span>
+            <span style="font-size:12px;color:var(--t2)">
+              {{ Object.values(store.publishStatus).filter((s: any) => s.status === 'published').length }} / {{ Object.keys(store.publishStatus).length }} 个平台已发布
+            </span>
           </div>
         </div>
       </div>

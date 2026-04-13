@@ -472,9 +472,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
     ws = createTaskWs(taskId.value)
     ws.on('step_changed', (data) => {
       if (data.to_step !== undefined) currentStep.value = data.to_step
-      if (data.status === 'awaiting_confirm' && data.step === 1) {
-        isGenerating.value = false
-        // 重新加载任务获取文案结果
+      // 任何步骤状态变化都重新加载任务数据
+      if (data.status === 'awaiting_confirm' || data.status === 'done' || data.status === 'failed') {
+        if (data.step === 1) isGenerating.value = false
         if (taskId.value) loadTask(taskId.value)
       }
     })

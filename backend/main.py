@@ -28,7 +28,7 @@ class UnicodeJSONResponse(JSONResponse):
             separators=(",", ":"),
         ).encode("utf-8")
 
-from config import settings, ROOT_DIR, BACKEND_DIR
+from config import settings, ROOT_DIR, BACKEND_DIR, UPLOADS_DIR
 from database import init_db, close_db
 from websocket.manager import ws_manager
 
@@ -94,6 +94,9 @@ app.include_router(tasks.router)
 app.include_router(platforms.router)
 app.include_router(stats.router)
 app.include_router(tools.router)
+
+# ── 静态文件：上传目录（封面预览等） ──
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 # ── WebSocket 端点 ──
