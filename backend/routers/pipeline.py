@@ -80,6 +80,82 @@ async def upload_files(
 
 
 # ══════════════════════════════════════════
+# 素材检查（去重 + 草稿恢复）
+# ══════════════════════════════════════════
+
+@router.get("/upload/check/{folder_id}")
+async def check_uploaded_folder(
+    folder_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """检查已上传的素材文件夹是否还在，返回文件清单。
+    用于草稿恢复时跳过重复上传。"""
+    folder_path = os.path.join(UPLOAD_ROOT, folder_id)
+    if not os.path.isdir(folder_path):
+        return ApiResponse.success(data={"exists": False, "folder_id": folder_id})
+
+    manifest = _scan_folder(folder_path)
+    total_files = len(manifest["images"]) + len(manifest["videos"]) + len(manifest["txts"])
+    return ApiResponse.success(data={
+        "exists": True,
+        "folder_id": folder_id,
+        "folder_path": folder_path,
+        "total_files": total_files,
+        "file_manifest": manifest,
+    })
+
+
+@router.post("/upload/dedup")
+async def upload_with_dedup(
+    folder_id: str = "",
+    files: List[UploadFile] = File(...),
+    user: UserInfo = Depends(get_current_user),
+):
+    """上传素材，跳过已存在的同名同大小文件。"""
+    if not folder_id:
+        folder_id = uuid.uuid4().hex[:12]
+    folder_path = os.path.join(UPLOAD_ROOT, folder_id)
+    os.makedirs(folder_path, exist_ok=True)
+
+    # 已存在的文件 {name: size}
+    existing = {}
+    if os.path.isdir(folder_path):
+        for fname in os.listdir(folder_path):
+            fpath = os.path.join(folder_path, fname)
+            if os.path.isfile(fpath):
+                existing[fname] = os.path.getsize(fpath)
+
+    saved = 0
+    skipped = 0
+    for f in files:
+        raw_name = f.filename or "unknown"
+        safe_name = _fix_filename_encoding(raw_name)
+        safe_name = os.path.basename(safe_name)
+        safe_name = safe_name.replace('..', '_').replace('/', '_').replace('\\', '_')
+
+        content = await f.read()
+
+        # 去重：同名 + 同大小 = 跳过
+        if safe_name in existing and existing[safe_name] == len(content):
+            skipped += 1
+            continue
+
+        dest_path = os.path.join(folder_path, safe_name)
+        with open(dest_path, "wb") as fp:
+            fp.write(content)
+        saved += 1
+
+    manifest = _scan_folder(folder_path)
+    return ApiResponse.success(data={
+        "folder_path": folder_path,
+        "folder_id": folder_id,
+        "saved": saved,
+        "skipped": skipped,
+        "file_manifest": manifest,
+    })
+
+
+# ══════════════════════════════════════════
 # 分片断点续传
 # ══════════════════════════════════════════
 

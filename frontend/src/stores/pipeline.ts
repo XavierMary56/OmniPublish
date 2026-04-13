@@ -54,18 +54,37 @@ export const usePipelineStore = defineStore('pipeline', () => {
     const hasLargeFile = files.some(f => f.size > CHUNK_SIZE * 2)
 
     try {
-      if (hasLargeFile) {
-        // 大文件：分片上传
+      // 如果草稿中有 folderId，使用去重上传（跳过已存在文件）
+      if (folderId.value) {
+        await uploadWithDedup(files, folderId.value)
+      } else if (hasLargeFile) {
         await uploadChunked(files, totalSize)
       } else {
-        // 小文件：整体上传
         await uploadDirect(files)
       }
-      // 保存草稿到 localStorage
       saveDraft()
     } finally {
       isUploading.value = false
     }
+  }
+
+  /** 去重上传（追加到已有文件夹，跳过同名同大小文件） */
+  async function uploadWithDedup(files: File[], existingFolderId: string) {
+    const formData = new FormData()
+    for (const f of files) {
+      formData.append('files', f)
+    }
+    const res = await http.post(`/pipeline/upload/dedup?folder_id=${existingFolderId}`, formData, {
+      headers: { 'Content-Type': undefined },
+      onUploadProgress: (e) => {
+        if (e.total) uploadProgress.value = Math.round((e.loaded / e.total) * 100)
+      },
+    })
+    const data = res.data?.data ?? res.data
+    folderPath.value = data.folder_path
+    folderId.value = data.folder_id
+    fileManifest.value = data.file_manifest
+    uploadProgress.value = 100
   }
 
   /** 直接上传（小文件） */
@@ -158,8 +177,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
     localStorage.setItem('omnipub_draft', JSON.stringify(draft))
   }
 
-  /** 恢复草稿 */
-  function loadDraft(): boolean {
+  /** 恢复草稿（并验证服务端素材是否还在） */
+  async function loadDraft(): Promise<boolean> {
     const raw = localStorage.getItem('omnipub_draft')
     if (!raw) return false
     try {
@@ -179,6 +198,25 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (draft.fileManifest) fileManifest.value = draft.fileManifest
       if (draft.copyResult) copyResult.value = draft.copyResult
       if (draft.renamePrefix) renamePrefix.value = draft.renamePrefix
+
+      // 验证服务端素材是否还在
+      if (draft.folderId) {
+        try {
+          const check = await api('GET', `/pipeline/upload/check/${draft.folderId}`)
+          if (check.exists) {
+            // 素材还在，用服务端最新的 manifest
+            folderPath.value = check.folder_path
+            fileManifest.value = check.file_manifest
+          } else {
+            // 素材已失效，清除文件相关状态，保留其他草稿
+            folderPath.value = ''
+            folderId.value = ''
+            fileManifest.value = { images: [], videos: [], txts: [] }
+          }
+        } catch {
+          // 检查失败不阻塞
+        }
+      }
       return true
     } catch { return false }
   }
