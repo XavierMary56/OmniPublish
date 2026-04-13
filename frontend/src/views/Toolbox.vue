@@ -87,6 +87,14 @@ const toolGroups = [
         { key: 'target_size_mb', label: '目标大小 (MB)', type: 'number', default: 100, hint: '超过此大小才会压缩' },
         { key: 'codec', label: '编码器', type: 'select', default: 'libx264', options: codecOptions },
       ]},
+    { key: 'vid-watermark', icon: '🎬', name: '视频加水印', desc: 'MOV 动态四角轮转水印',
+      fields: [
+        { key: 'files', label: '选择视频', type: 'file', accept: 'video/*,.mp4,.mov,.avi,.mkv', multiple: true },
+        { key: 'watermark', label: '水印文件 (PNG/MOV)', type: 'file', accept: '.png,.mov,image/png,video/quicktime' },
+        { key: 'orient', label: '方向', type: 'select', default: 'auto', options: ['auto','portrait','landscape'] },
+        { key: 'codec', label: '编码器', type: 'select', default: 'libx264', options: codecOptions },
+        { key: 'bitrate', label: '码率', type: 'text', default: '2M' },
+      ]},
   ]},
   { section: '图片处理', items: [
     { key: 'smart-cover', icon: '🖼️', name: '智能封面', desc: 'AI 从图片中生成封面',

@@ -261,6 +261,10 @@ async def run_tool_with_upload(
         job_id = await tools_service.compress(input_dir, output_dir, target_size_mb, codec)
     elif tool_key == "smart-cover":
         job_id = await tools_service.smart_cover(input_dir, layout, candidates)
+    elif tool_key == "vid-watermark":
+        if not wm_path:
+            raise HTTPException(status_code=400, detail="请上传水印文件（PNG 或 MOV）")
+        job_id = await tools_service.vid_watermark(input_dir, output_dir, wm_path, orient, codec, bitrate)
     elif tool_key == "img-watermark":
         if not wm_path:
             raise HTTPException(status_code=400, detail="请上传水印图片")

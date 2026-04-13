@@ -146,6 +146,43 @@ class ToolsService:
     # 图片工具
     # ════════════════════════════════════════
 
+    async def vid_watermark(self, input_dir: str, output_dir: str = "",
+                            watermark_path: str = "", orient: str = "auto",
+                            codec: str = "libx264", bitrate: str = "2M",
+                            scale: float = 0.35) -> str:
+        """视频加水印（MOV 动态四角轮转）。"""
+        job = self._register("vid_watermark", locals())
+
+        async def _run():
+            job.status = "running"
+            try:
+                import argparse
+                from video_process import cmd_watermark, find_videos
+
+                videos = find_videos(input_dir)
+                if not videos:
+                    raise FileNotFoundError(f"目录下无视频文件: {input_dir}")
+
+                out = output_dir or os.path.join(input_dir, "已处理")
+                ns = argparse.Namespace(
+                    input=input_dir, output=out,
+                    watermark=watermark_path,
+                    orient=orient, codec=codec, bitrate=bitrate,
+                    fps=30, scale=scale,
+                    compress=False, target_size=None,
+                )
+                await asyncio.to_thread(cmd_watermark, ns)
+                job.status = "done"
+                job.progress = 100
+                job.result = {"count": len(videos), "output_dir": out}
+            except Exception as e:
+                job.status = "failed"
+                job.error = str(e)
+            job.finished_at = time.time()
+
+        asyncio.create_task(_run())
+        return job.id
+
     async def img_watermark(self, input_dir: str, output_dir: str = "",
                             watermark_path: str = "", position: str = "bottom-right",
                             wm_width: int = 264) -> str:
@@ -318,7 +355,8 @@ class ToolsService:
             import argparse
             from video_process import (
                 cmd_delogo, cmd_crop, cmd_blur_pad, cmd_trim,
-                cmd_add_intro_outro, cmd_concat, detect_default_codec, find_videos,
+                cmd_add_intro_outro, cmd_concat, cmd_watermark,
+                detect_default_codec, find_videos,
             )
 
             codec = extra.pop("codec", None) or detect_default_codec()
@@ -339,7 +377,8 @@ class ToolsService:
 
             dispatch = {
                 "delogo": cmd_delogo, "crop": cmd_crop, "blur-pad": cmd_blur_pad,
-                "trim": cmd_trim, "add-intro-outro": cmd_add_intro_outro, "concat": cmd_concat,
+                "trim": cmd_trim, "add-intro-outro": cmd_add_intro_outro,
+                "concat": cmd_concat, "watermark": cmd_watermark,
             }
             fn = dispatch.get(command)
             if not fn:

@@ -541,8 +541,12 @@ function handleDiscardDraft() {
             <div style="flex:1;min-width:280px">
               <h4 style="margin-bottom:12px;font-size:14px">文案输入</h4>
               <div style="display:flex;gap:14px;margin-bottom:14px">
-                <div class="form-group" style="flex:1"><label>主角</label><input v-model="copyForm.protagonist" class="form-input" placeholder="主角名" /></div>
-                <div class="form-group" style="flex:1"><label>事件</label><input v-model="copyForm.event" class="form-input" placeholder="发生了什么" /></div>
+                <div class="form-group" style="flex:1"><label>主角</label><input v-model="copyForm.protagonist" class="form-input" placeholder="主角名 / 描述" /></div>
+                <div class="form-group" style="flex:1"><label>事件</label><input v-model="copyForm.event" class="form-input" placeholder="发生了什么事" /></div>
+              </div>
+              <div style="display:flex;gap:14px;margin-bottom:14px">
+                <div class="form-group" style="flex:1"><label>生活照描述</label><input v-model="copyForm.photos" class="form-input" :placeholder="`${store.fileManifest.images.length}张图片`" /></div>
+                <div class="form-group" style="flex:1"><label>视频内容</label><input v-model="copyForm.video_desc" class="form-input" :placeholder="`${store.fileManifest.videos.length}段视频`" /></div>
               </div>
               <div style="display:flex;gap:14px;margin-bottom:14px">
                 <div class="form-group" style="flex:1"><label>文风</label>
