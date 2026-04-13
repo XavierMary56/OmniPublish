@@ -648,6 +648,27 @@ async def generate_cover(task_id: int, req: GenerateCoverRequest = None,
     return ApiResponse.success(message="封面生成已启动")
 
 
+@router.post("/{task_id}/step/4/upload-cover")
+async def upload_manual_cover(task_id: int, cover: UploadFile = File(...),
+                               user: UserInfo = Depends(get_current_user)):
+    """手动上传封面图片。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    folder_path = task["folder_path"]
+    safe_name = f"manual_cover_{os.path.basename(cover.filename or 'cover.jpg')}"
+    dest = os.path.join(folder_path, safe_name)
+    with open(dest, "wb") as fp:
+        while True:
+            chunk = await cover.read(1024 * 1024)
+            if not chunk:
+                break
+            fp.write(chunk)
+
+    return ApiResponse.success(data={"cover_path": dest})
+
+
 @router.put("/{task_id}/step/4/confirm")
 async def confirm_cover(task_id: int, req: ConfirmCoverRequest, user: UserInfo = Depends(get_current_user)):
     """确认选中的封面。"""

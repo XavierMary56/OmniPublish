@@ -60,6 +60,8 @@ const separator = ref('_')
 
 // Step 4 state
 const coverLayout = ref('triple')
+const coverSize = ref('1300x640')
+const coverHeadroom = ref(15)
 
 const stepNames = ['素材 & 平台', '文案生成', '图片重命名', '封面制作', '水印处理', '上传 & 发布']
 
@@ -316,6 +318,26 @@ async function handleGenerateCover() {
     isGeneratingCover.value = false
     alert(e.response?.data?.detail || '封面生成失败')
   }
+}
+
+async function onManualCoverSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files?.length || !store.taskId) return
+  const formData = new FormData()
+  formData.append('cover', input.files[0])
+  try {
+    const res = await http.post(`/pipeline/${store.taskId}/step/4/upload-cover`, formData, {
+      headers: { 'Content-Type': undefined },
+    })
+    const data = res.data?.data ?? res.data
+    if (data.cover_path) {
+      store.coverCandidates = [data.cover_path]
+      store.selectedCover = 0
+    }
+  } catch (err: any) {
+    alert(err.response?.data?.detail || '上传失败')
+  }
+  input.value = ''
 }
 
 async function handleConfirmCover() {
@@ -701,14 +723,36 @@ function handleDiscardDraft() {
         <!-- Step 4: 封面 -->
         <div v-if="store.currentStep === 3">
           <h4 style="margin-bottom:12px;font-size:14px">封面制作</h4>
-          <div style="display:flex;gap:14px;margin-bottom:14px">
-            <div class="form-group"><label>拼接方式</label>
-              <select v-model="coverLayout" class="form-select"><option value="triple">三拼</option><option value="single">单图</option><option value="double">双拼</option><option value="wide">宽屏</option><option value="portrait">竖版</option></select>
+          <p style="font-size:12px;color:var(--t2);margin-bottom:14px">系统将自动从素材图片中生成封面候选。请选择满意的封面，或重新生成。</p>
+          <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1;min-width:160px">
+              <label>拼接方式</label>
+              <select v-model="coverLayout" class="form-select">
+                <option value="triple">三拼（3 张横向拼接）</option>
+                <option value="single">单图（单张裁剪）</option>
+                <option value="double">双拼</option>
+                <option value="wide">宽屏横版</option>
+                <option value="portrait">竖版</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;min-width:160px">
+              <label>封面尺寸</label>
+              <select v-model="coverSize" class="form-select">
+                <option value="1300x640">1300 × 640（标准横版）</option>
+                <option value="800x450">800 × 450</option>
+                <option value="900x1200">900 × 1200（竖版）</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0.5;min-width:100px">
+              <label>头顶留白 %</label>
+              <input v-model.number="coverHeadroom" type="number" class="form-input" min="0" max="50" />
             </div>
           </div>
           <button class="btn btn-primary" style="margin-bottom:14px" :disabled="isGeneratingCover" @click="handleGenerateCover">
             {{ isGeneratingCover ? '⏳ 生成中...' : '🖼️ 生成封面候选' }}
           </button>
+
+          <!-- 封面候选展示 -->
           <div v-if="store.coverCandidates.length" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
             <div v-for="(c, i) in store.coverCandidates" :key="i"
                  style="border-radius:8px;overflow:hidden;cursor:pointer;position:relative;background:var(--bg3)"
@@ -717,12 +761,19 @@ function handleDiscardDraft() {
               <img :src="coverUrl(c)" :alt="'候选 ' + 'ABC'[i]"
                    style="width:100%;height:140px;object-fit:cover;display:block"
                    @error="($event.target as HTMLImageElement).style.display='none'" />
-              <div style="padding:6px 8px;font-size:11px;color:var(--t2);text-align:center">候选 {{ 'ABC'[i] }}</div>
+              <div style="padding:6px 8px;font-size:11px;color:var(--t2);text-align:center">
+                候选 {{ 'ABC'[i] }} {{ i < 2 ? '('+coverLayout+')' : '(单图)' }}
+              </div>
               <div v-if="store.selectedCover === i" style="position:absolute;top:6px;right:6px;background:var(--primary);color:#000;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700">已选</div>
             </div>
           </div>
           <div style="margin-top:14px;display:flex;gap:8px">
             <button class="btn btn-green" :disabled="!store.coverCandidates.length" @click="handleConfirmCover">✅ 使用选中封面，下一步 →</button>
+            <button class="btn btn-ghost" :disabled="isGeneratingCover" @click="handleGenerateCover">🔄 重新生成</button>
+            <label class="btn btn-ghost" style="cursor:pointer">
+              📁 手动选图
+              <input type="file" accept="image/*" style="display:none" @change="onManualCoverSelect" />
+            </label>
           </div>
         </div>
 
