@@ -68,10 +68,13 @@ class ToolsService:
     # ════════════════════════════════════════
 
     async def delogo(self, input_dir: str, output_dir: str = "", orient: str = "auto",
-                     codec: str = "libx264", bitrate: str = "2M") -> str:
+                     codec: str = "libx264", bitrate: str = "2M", coords: dict = None) -> str:
         """遮盖四角水印。"""
-        job = self._register("delogo", locals())
-        asyncio.create_task(self._run_video_cmd(job, "delogo", input_dir, output_dir, orient=orient, codec=codec, bitrate=bitrate))
+        extra = {}
+        if coords:
+            extra = {k: v for k, v in coords.items() if v}
+        job = self._register("delogo", {**locals(), **extra})
+        asyncio.create_task(self._run_video_cmd(job, "delogo", input_dir, output_dir, orient=orient, codec=codec, bitrate=bitrate, **extra))
         return job.id
 
     async def crop(self, input_dir: str, output_dir: str = "", orient: str = "auto",
@@ -142,6 +145,59 @@ class ToolsService:
     # ════════════════════════════════════════
     # 图片工具
     # ════════════════════════════════════════
+
+    async def img_watermark(self, input_dir: str, output_dir: str = "",
+                            watermark_path: str = "", position: str = "bottom-right",
+                            wm_width: int = 264) -> str:
+        """图片批量加水印。"""
+        job = self._register("img_watermark", locals())
+
+        async def _run():
+            job.status = "running"
+            try:
+                import glob
+                from PIL import Image
+                img_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+                images = [f for f in sorted(os.listdir(input_dir))
+                          if os.path.splitext(f)[1].lower() in img_exts]
+                if not images:
+                    raise FileNotFoundError(f"目录下无图片文件: {input_dir}")
+                if not watermark_path or not os.path.exists(watermark_path):
+                    raise FileNotFoundError(f"水印文件不存在: {watermark_path}")
+
+                out = output_dir or os.path.join(input_dir, "watermarked")
+                os.makedirs(out, exist_ok=True)
+                wm = Image.open(watermark_path).convert("RGBA")
+                # 缩放水印
+                ratio = wm_width / wm.width
+                wm = wm.resize((wm_width, int(wm.height * ratio)), Image.LANCZOS)
+
+                total = len(images)
+                for i, fname in enumerate(images):
+                    img = Image.open(os.path.join(input_dir, fname)).convert("RGBA")
+                    # 计算位置
+                    margin = 10
+                    if position == "bottom-right":
+                        pos = (img.width - wm.width - margin, img.height - wm.height - margin)
+                    elif position == "bottom-left":
+                        pos = (margin, img.height - wm.height - margin)
+                    elif position == "top-right":
+                        pos = (img.width - wm.width - margin, margin)
+                    else:
+                        pos = (margin, margin)
+                    img.paste(wm, pos, wm)
+                    img.convert("RGB").save(os.path.join(out, fname), quality=95)
+                    job.progress = int((i + 1) / total * 100)
+
+                job.status = "done"
+                job.result = {"count": total, "output_dir": out}
+            except Exception as e:
+                job.status = "failed"
+                job.error = str(e)
+            job.finished_at = time.time()
+
+        asyncio.create_task(_run())
+        return job.id
 
     async def smart_cover(self, input_dir: str, layout: str = "triple", candidates: int = 3) -> str:
         """智能封面。"""
