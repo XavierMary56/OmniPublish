@@ -2,11 +2,13 @@
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { usePipelineStore } from './stores/pipeline'
 import { notificationWs } from './api/ws'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const pipeline = usePipelineStore()
 
 const isLoginPage = computed(() => route.name === 'login')
 
@@ -94,6 +96,28 @@ onMounted(async () => {
           <button class="btn btn-primary" @click="navigate('pipeline')">＋ 新建发帖任务</button>
         </div>
       </div>
+      <!-- 全局上传进度条 — 切换页面也可见 -->
+      <div v-if="pipeline.isUploading || (pipeline.taskId && pipeline.currentStep > 0 && pipeline.status === 'running')"
+           class="global-progress-bar">
+        <div v-if="pipeline.isUploading" style="display:flex;align-items:center;gap:12px;padding:8px 28px;background:rgba(79,195,247,.06);border-bottom:1px solid var(--bd)">
+          <span style="font-size:12px;color:var(--primary);font-weight:600;white-space:nowrap">⬆️ 素材上传中</span>
+          <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+            <div style="height:100%;border-radius:3px;background:var(--primary);transition:width .3s" :style="{width: pipeline.uploadProgress + '%'}" />
+          </div>
+          <span style="font-size:11px;color:var(--t2);min-width:40px;text-align:right">{{ pipeline.uploadProgress }}%</span>
+          <span v-if="pipeline.taskNo" style="font-size:11px;color:var(--t3);cursor:pointer" @click="navigate('pipeline')">
+            #{{ pipeline.taskNo }} 查看 →
+          </span>
+        </div>
+        <div v-else-if="pipeline.taskId && pipeline.status === 'running'"
+             style="display:flex;align-items:center;gap:12px;padding:6px 28px;background:rgba(129,199,132,.06);border-bottom:1px solid var(--bd);cursor:pointer"
+             @click="navigate('pipeline')">
+          <span style="font-size:12px;color:var(--green);font-weight:600">🚀 任务 #{{ pipeline.taskNo }} 进行中</span>
+          <span style="font-size:11px;color:var(--t2)">步骤 {{ pipeline.currentStep + 1 }}/6</span>
+          <span style="font-size:11px;color:var(--primary)">点击查看 →</span>
+        </div>
+      </div>
+
       <div class="page-container">
         <router-view />
       </div>
