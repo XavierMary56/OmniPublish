@@ -40,9 +40,10 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // WebSocket
   let ws: OmniWs | null = null
 
-  // 分片大小：5MB，大文件阈值：50MB
-  const CHUNK_SIZE = 5 * 1024 * 1024
+  // 分片大小：10MB，大文件阈值：50MB，并发数：4
+  const CHUNK_SIZE = 10 * 1024 * 1024
   const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024
+  const CONCURRENT_UPLOADS = 4
   const folderId = ref('')
 
   /** 上传素材文件：小文件直传，大文件(>50MB)分片上传 */
@@ -141,25 +142,37 @@ export const usePipelineStore = defineStore('pipeline', () => {
     const existingChunks = new Set<number>(init.uploaded_chunks || [])
     let fileUploaded = 0
 
-    // 逐片上传
+    // 计算已跳过的分片大小
+    for (const idx of existingChunks) {
+      fileUploaded += Math.min(CHUNK_SIZE, file.size - idx * CHUNK_SIZE)
+    }
+
+    // 构建待上传分片列表
+    const pendingChunks: number[] = []
     for (let i = 0; i < totalChunks; i++) {
-      const chunkSize = Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE)
-      if (existingChunks.has(i)) {
-        fileUploaded += chunkSize
-        continue
-      }
-      const start = i * CHUNK_SIZE
+      if (!existingChunks.has(i)) pendingChunks.push(i)
+    }
+
+    // 并发上传分片（CONCURRENT_UPLOADS 个同时）
+    const uploadChunk = async (chunkIdx: number) => {
+      const start = chunkIdx * CHUNK_SIZE
       const end = Math.min(start + CHUNK_SIZE, file.size)
       const blob = file.slice(start, end)
       const chunkForm = new FormData()
-      chunkForm.append('chunk', blob, `chunk_${i}`)
+      chunkForm.append('chunk', blob, `chunk_${chunkIdx}`)
 
       await http.post('/pipeline/upload/chunk', chunkForm, {
         headers: { 'Content-Type': undefined },
-        params: { upload_id: uploadId, chunk_index: i },
+        params: { upload_id: uploadId, chunk_index: chunkIdx },
       })
-      fileUploaded += chunkSize
+      fileUploaded += (end - start)
       uploadProgress.value = Math.round(((baseUploaded + fileUploaded) / totalSize) * 100)
+    }
+
+    // 分批并发执行
+    for (let batch = 0; batch < pendingChunks.length; batch += CONCURRENT_UPLOADS) {
+      const batchChunks = pendingChunks.slice(batch, batch + CONCURRENT_UPLOADS)
+      await Promise.all(batchChunks.map(uploadChunk))
     }
 
     // 合并分片
