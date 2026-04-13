@@ -338,11 +338,31 @@ export const usePipelineStore = defineStore('pipeline', () => {
   }
 
   /** AI 文案生成 */
+  let generatePollTimer: number | null = null
+
   async function generateCopy(params: Record<string, any>) {
     if (!taskId.value) return
     isGenerating.value = true
     await api('POST', `/pipeline/${taskId.value}/step/2/generate`, params)
-    // 结果通过 WebSocket 推送
+
+    // 轮询备用方案（WebSocket 可能不稳定）
+    if (generatePollTimer) clearInterval(generatePollTimer)
+    generatePollTimer = window.setInterval(async () => {
+      if (!taskId.value) return
+      try {
+        const data = await api('GET', `/pipeline/${taskId.value}`)
+        const step2 = (data.steps || [])[1]
+        if (step2 && (step2.status === 'awaiting_confirm' || step2.status === 'failed')) {
+          isGenerating.value = false
+          if (step2.status === 'awaiting_confirm' && step2.data) {
+            copyResult.value = step2.data
+          }
+          // 重新加载完整任务数据
+          await loadTask(taskId.value!)
+          if (generatePollTimer) { clearInterval(generatePollTimer); generatePollTimer = null }
+        }
+      } catch {}
+    }, 3000)
   }
 
   /** 确认文案 */
