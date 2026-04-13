@@ -290,7 +290,7 @@ function handleDiscardDraft() {
 
               <!-- 拖拽上传区域 -->
               <div class="upload-zone"
-                   :class="{ dragging: isDragging, uploaded: store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0 }"
+                   :class="{ dragging: isDragging, uploaded: store.fileManifest.images.length > 0 || store.fileManifest.videos.length > 0 || store.fileManifest.txts.length > 0 }"
                    @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop"
                    @click="triggerUpload()">
                 <input ref="fileInput" type="file" multiple accept="image/*,video/*,.txt" style="display:none" @change="onFileSelect" />

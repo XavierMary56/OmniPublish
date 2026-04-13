@@ -219,16 +219,27 @@ export const usePipelineStore = defineStore('pipeline', () => {
           if (check.exists) {
             folderPath.value = check.folder_path
             fileManifest.value = check.file_manifest
+            // 素材已就绪，进度设为 100%
+            uploadProgress.value = 100
+            isUploading.value = false
           } else {
             folderPath.value = ''
             folderId.value = ''
             fileManifest.value = { images: [], videos: [], txts: [] }
+            uploadProgress.value = 0
           }
         } catch {
           // 检查失败，清除文件状态避免残留
           folderPath.value = ''
           folderId.value = ''
           fileManifest.value = { images: [], videos: [], txts: [] }
+          uploadProgress.value = 0
+        }
+      } else if (draft.fileManifest) {
+        // 有 fileManifest 但无 folderId（旧草稿格式），也标记为就绪
+        const m = draft.fileManifest
+        if (m.images?.length || m.videos?.length || m.txts?.length) {
+          uploadProgress.value = 100
         }
       }
       return true
