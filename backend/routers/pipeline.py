@@ -633,6 +633,7 @@ async def confirm_rename(task_id: int, req: ConfirmRenameRequest,
 class GenerateCoverRequest(BaseModel):
     layout: str = "triple"
     candidates: int = 3
+    head_margin: float = 15  # 百分比，前端传 15 表示 15%
 
 @router.post("/{task_id}/step/4/generate")
 async def generate_cover(task_id: int, req: GenerateCoverRequest = None,
@@ -644,7 +645,8 @@ async def generate_cover(task_id: int, req: GenerateCoverRequest = None,
 
     layout = req.layout if req else "triple"
     candidates = req.candidates if req else 3
-    bg.add_task(cover_service.generate_candidates, task_id, task["folder_path"], layout, candidates)
+    head_margin = (req.head_margin if req else 15) / 100  # 转为小数
+    bg.add_task(cover_service.generate_candidates, task_id, task["folder_path"], layout, candidates, head_margin)
     return ApiResponse.success(message="封面生成已启动")
 
 

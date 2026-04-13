@@ -292,7 +292,7 @@ async function handleGenerateCover() {
   isGeneratingCover.value = true
   store.coverCandidates = []
   try {
-    await store.generateCover(coverLayout.value, 3)
+    await store.generateCover(coverLayout.value, 3, coverHeadroom.value)
     // 轮询等待封面生成完成
     if (coverPollTimer) clearInterval(coverPollTimer)
     coverPollTimer = window.setInterval(async () => {
