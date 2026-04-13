@@ -41,7 +41,7 @@ class PipelineService:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
-                now = datetime.now().isoformat()
+                now = datetime.now()
 
                 # 完成当前步骤
                 await conn.execute(
@@ -77,7 +77,7 @@ class PipelineService:
         """更新某步骤的状态。"""
         pool = await get_pool()
         async with pool.acquire() as conn:
-            now = datetime.now().isoformat()
+            now = datetime.now()
             # Build dynamic SET clause with numbered params
             set_parts = ["status = $1"]
             params = [status]
@@ -123,7 +123,7 @@ class PipelineService:
         """更新任务总体状态。"""
         pool = await get_pool()
         async with pool.acquire() as conn:
-            now = datetime.now().isoformat()
+            now = datetime.now()
             finished = now if status in ("done", "failed", "partial") else None
             await conn.execute(
                 "UPDATE tasks SET status = $1, updated_at = $2, finished_at = $3 WHERE id = $4",

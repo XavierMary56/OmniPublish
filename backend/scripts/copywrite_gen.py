@@ -108,20 +108,34 @@ RETRY_BASE_DELAY = 2  # 秒
 
 
 def _is_anthropic(api_base, model):
-    return "anthropic" in api_base.lower() or model.startswith("claude")
+    """判断是否使用 Anthropic 原生 API（非 OpenAI 兼容中转）。"""
+    base_lower = api_base.lower()
+    # 只有直连 Anthropic 官方 API 时才走 Anthropic 协议
+    # 第三方中转站（即使模型名包含 claude）统一走 OpenAI 兼容协议
+    return "anthropic.com" in base_lower or "api.anthropic" in base_lower
 
 
 def _read_stream_with_timeout(resp, timeout_per_line=60):
     """带单行超时的流式读取。"""
-    import socket
-    resp.fp._sock.settimeout(timeout_per_line)
+    try:
+        import socket
+        if hasattr(resp, 'fp') and hasattr(resp.fp, '_sock'):
+            resp.fp._sock.settimeout(timeout_per_line)
+        elif hasattr(resp, 'fp') and hasattr(resp.fp, 'raw') and hasattr(resp.fp.raw, '_sock'):
+            resp.fp.raw._sock.settimeout(timeout_per_line)
+    except (AttributeError, OSError):
+        pass  # 在线程池中可能无法设置 socket timeout，忽略
     for raw_line in resp:
         yield raw_line
 
 
 def call_api_openai(system_prompt, user_prompt, api_base, api_key, model):
     """调用 OpenAI 兼容 API（流式）。"""
-    url = f"{api_base.rstrip('/')}/chat/completions"
+    base = api_base.rstrip('/')
+    # 自动补 /v1 前缀（如果用户没写）
+    if not base.endswith('/v1'):
+        base += '/v1'
+    url = f"{base}/chat/completions"
     payload = json.dumps({
         "model": model,
         "messages": [
@@ -231,7 +245,7 @@ def call_api(system_prompt, user_prompt, api_base, api_key, model):
             # 4xx 客户端错误不重试（除 429）
             if 400 <= e.code < 500 and e.code != 429:
                 print(f"\n[ERROR] API 请求失败 (不可重试): {last_error}")
-                sys.exit(1)
+                raise RuntimeError(f"API 请求失败: {last_error}")
         except Exception as e:
             last_error = str(e)
 
@@ -242,7 +256,7 @@ def call_api(system_prompt, user_prompt, api_base, api_key, model):
             time.sleep(delay)
 
     print(f"\n[ERROR] API 调用失败，已重试 {MAX_RETRIES} 次: {last_error}")
-    sys.exit(1)
+    raise RuntimeError(f"API 调用失败 (重试 {MAX_RETRIES} 次): {last_error}")
 
 
 # ═══════════════════════════════════════════
