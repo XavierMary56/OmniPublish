@@ -31,7 +31,10 @@ except ImportError:
 def _load_crypto_config():
     """从环境变量或 config.json 加载加密配置。"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_file = os.path.join(script_dir, "..", "config.json")
+    # 优先找项目根目录的 config.json（Docker: /app/config.json），再找 backend 级别
+    config_file = os.path.join(script_dir, "..", "..", "config.json")
+    if not os.path.exists(config_file):
+        config_file = os.path.join(script_dir, "..", "config.json")
     config = {}
     if os.path.exists(config_file):
         with open(config_file, "r", encoding="utf-8") as f:
