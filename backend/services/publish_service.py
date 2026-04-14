@@ -41,6 +41,14 @@ class PublishService:
 
     def _get_client(self, platform: dict) -> RemotePublishClient:
         """获取或创建平台 API client。"""
+        # 预检查：crypto 密钥是否已配置
+        from publish_api import APPKEY, KEY, IV
+        if not APPKEY or len(KEY) < 16 or len(IV) < 16:
+            raise ValueError(
+                f"CMS 加密密钥未配置！请在 config.json 的 crypto 节中配置 appkey、aes_key(≥16字符)、aes_iv(≥16字符)。"
+                f"当前: appkey={'已设置' if APPKEY else '空'}, aes_key={len(KEY)}字节, aes_iv={len(IV)}字节"
+            )
+
         pid = platform.get("id") or platform.get("platform_id")
         if pid not in self._clients:
             base_url = platform.get("api_base_url", "")

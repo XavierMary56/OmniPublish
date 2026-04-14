@@ -993,6 +993,18 @@ function handleDiscardDraft() {
               </div>
               <div class="progress-bar" style="height:6px"><div class="progress-fill" :style="{width:info.progress+'%',background:info.status==='done'?'var(--green)':info.status==='failed'?'var(--red)':'var(--primary)'}" /></div>
             </div>
+            <!-- 水印全部完成后显示下一步按钮 -->
+            <div v-if="Object.values(store.wmProgress).every(p => p.status === 'done' || p.status === 'skipped')"
+                 style="margin-top:12px;padding:14px 16px;background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.2);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;color:var(--green)">✅ 水印处理全部完成</span>
+              <button class="btn btn-green" @click="store.currentStep = 5">进入上传 & 发布 →</button>
+            </div>
+            <!-- 部分失败时也允许继续 -->
+            <div v-else-if="Object.values(store.wmProgress).some(p => p.status === 'failed') && !Object.values(store.wmProgress).some(p => p.status === 'running')"
+                 style="margin-top:12px;padding:14px 16px;background:rgba(239,83,80,.06);border:1px solid rgba(239,83,80,.2);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;color:var(--orange)">⚠️ 部分平台水印失败，可跳过继续发布</span>
+              <button class="btn btn-primary" @click="store.currentStep = 5">跳过失败，继续发布 →</button>
+            </div>
           </div>
         </div>
 
