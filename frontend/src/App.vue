@@ -60,7 +60,7 @@ function logout() {
 onMounted(async () => {
   if (auth.token) {
     await auth.fetchMe()
-    notificationWs.connect()
+    notificationWs.connect(auth.token)
   }
 })
 </script>
