@@ -275,8 +275,15 @@ const renamePreviewLocal = computed(() => {
 
 // Step 6 发布按钮是否可用
 const canPublish = computed(() => {
+  // 只要在 Step 6 且有选中的平台就可以发布
+  if (store.currentStep !== 5) return false
+  // 有 publishStatus 数据时，检查是否还有未发布的
   const statuses = Object.values(store.publishStatus)
-  return statuses.length > 0 && statuses.some((s: any) => s.status !== 'published')
+  if (statuses.length > 0) {
+    return statuses.some((s: any) => s.status !== 'published' && s.status !== 'publishing')
+  }
+  // 没有 publishStatus 但有选中平台，也允许发布
+  return store.selectedPlatforms.length > 0
 })
 
 async function handleGenerateCopy() {
@@ -459,6 +466,13 @@ watch(() => store.coverCandidates, (candidates) => {
 
 // 监听步骤变化，加载对应数据
 watch(() => store.currentStep, async (step) => {
+  // 进入 Step 6 时，确保 publishStatus 有数据
+  if (step === 5 && store.taskId) {
+    if (Object.keys(store.publishStatus).length === 0) {
+      // 从任务数据初始化 publishStatus
+      await store.loadTask(store.taskId)
+    }
+  }
   // 进入 Step 5 时加载水印方案预览
   if (step === 4 && store.taskId) {
     try {
@@ -986,8 +1000,9 @@ function handleDiscardDraft() {
         <div v-if="store.currentStep === 5">
           <h4 style="margin-bottom:12px;font-size:14px">上传 & 发布 <span style="font-size:12px;color:var(--t2);font-weight:400">— 多平台并行上传，切片完成后逐一发布</span></h4>
           <div v-if="Object.keys(store.publishStatus).length === 0" style="color:var(--t3);padding:20px;text-align:center">
-            <div style="font-size:24px;margin-bottom:8px">⏳</div>
-            等待水印处理完成后自动进入发布…
+            <div style="font-size:24px;margin-bottom:8px">🚀</div>
+            <div>点击下方「一键发布」开始上传和发布</div>
+            <div style="font-size:11px;margin-top:4px">已选 {{ store.selectedPlatforms.length }} 个平台</div>
           </div>
           <div v-else style="display:flex;flex-direction:column;gap:10px">
             <div v-for="(info, pid) in store.publishStatus" :key="pid"
