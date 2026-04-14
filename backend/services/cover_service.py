@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -26,17 +27,22 @@ class CoverService:
 
     async def generate_candidates(self, task_id: int, folder_path: str,
                                    layout: str = "triple", candidates: int = 3,
-                                   head_margin: float = 0.15) -> list:
+                                   head_margin: float = 0.15, size: str = "") -> list:
         """生成候选封面。"""
         await pipeline_service.update_step_status(task_id, step=3, status="running")
         await pipeline_service.add_log(
-            task_id, f"开始生成封面候选: layout={layout}, candidates={candidates}", step=3
+            task_id, f"开始生成封面候选: layout={layout}, candidates={candidates}, size={size or '默认'}", step=3
         )
 
         try:
             # 在线程池执行（Pillow + YOLO 是 CPU 密集型）
+            # 输出目录：使用 uploads/covers/{task_id}/ 而不是素材源目录（可能只读）
+            from config import UPLOADS_DIR
+            output_dir = str(UPLOADS_DIR / "covers" / str(task_id))
+            os.makedirs(output_dir, exist_ok=True)
+
             cover_paths = await asyncio.to_thread(
-                make_cover, folder_path, folder_path, layout, head_margin, 95, candidates
+                make_cover, folder_path, output_dir, layout, head_margin, 95, candidates, size
             )
 
             if not cover_paths:

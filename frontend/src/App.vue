@@ -12,7 +12,19 @@ const pipeline = usePipelineStore()
 
 const isLoginPage = computed(() => route.name === 'login')
 
-const navItems = [
+interface NavItem {
+  name: string
+  label: string
+  icon: string
+  badge?: string
+  admin?: boolean
+}
+interface NavGroup {
+  section: string
+  items: NavItem[]
+}
+
+const navItems: NavGroup[] = [
   { section: '核心', items: [
     { name: 'dashboard', label: '工作台', icon: '📊' },
     { name: 'pipeline', label: '新建发帖任务', icon: '🚀', badge: 'New' },

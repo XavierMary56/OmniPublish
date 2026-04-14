@@ -1,6 +1,25 @@
 version: "3.8"
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: omnipub-db
+    environment:
+      - POSTGRES_DB=omnipub
+      - POSTGRES_USER=omnipub
+      - POSTGRES_PASSWORD=omnipub2026
+      - TZ=Asia/Shanghai
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnipub -d omnipub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   omnipub:
     build: .
     container_name: omnipub
@@ -12,13 +31,22 @@ services:
       # 上传/输出持久化
       - ./uploads:/app/uploads
       # 挂载本地素材目录 — 容器内可直接读取
-      - D:/Users/Public/claude_ia:/mnt/素材:ro
+      - /mnt/d/Users/Public/claude_ia:/mnt/materials
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://omnipub:omnipub2026@db:5432/omnipub
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9527/api/ping')"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  pgdata:
+    external: true
+    name: omnipublish_omnipub-pgdata

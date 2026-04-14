@@ -482,9 +482,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
   }
 
   /** 生成封面 */
-  async function generateCover(layout: string, candidates: number, headMargin: number = 15) {
+  async function generateCover(layout: string, candidates: number, headMargin: number = 15, size: string = '1300x640') {
     if (!taskId.value) return
-    await api('POST', `/pipeline/${taskId.value}/step/4/generate`, { layout, candidates, head_margin: headMargin })
+    await api('POST', `/pipeline/${taskId.value}/step/4/generate`, { layout, candidates, head_margin: headMargin, size })
   }
 
   /** 确认封面 */

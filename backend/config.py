@@ -78,7 +78,7 @@ class AppConfig:
         if not self.database_url:
             self.database_url = os.environ.get(
                 "DATABASE_URL",
-                "postgresql://omnipub:omnipub2026@localhost:5433/omnipub"
+"postgresql://omnipub:omnipub2026@localhost:5433/omnipub"
             )
 
 

@@ -88,9 +88,9 @@ LAYOUT_CONFIG = {
 }
 
 
-def make_single_cover(images, layout, head_margin, quality, output, suffix=""):
+def make_single_cover(images, layout, head_margin, quality, output, suffix="", cfg_override=None):
     """生成单张封面。"""
-    cfg = LAYOUT_CONFIG.get(layout, LAYOUT_CONFIG["triple"])
+    cfg = cfg_override or LAYOUT_CONFIG.get(layout, LAYOUT_CONFIG["triple"])
     count = min(cfg["count"], len(images))
     selected = list(images[:count])
 
@@ -136,11 +136,12 @@ def make_single_cover(images, layout, head_margin, quality, output, suffix=""):
 
 
 def make_cover(folder, output, layout="triple", head_margin=0.15, quality=95,
-               candidates=1):
+               candidates=1, size=""):
     """Generate cover image(s) from folder of images.
 
     Args:
         candidates: 生成候选封面数量（不同图片组合）
+        size: 自定义尺寸字符串如 "1300x640"，非空时覆盖 layout 默认尺寸
     """
     exts = {".jpg", ".jpeg", ".png", ".webp"}
     images = sorted([
@@ -155,6 +156,22 @@ def make_cover(folder, output, layout="triple", head_margin=0.15, quality=95,
         return []
 
     cfg = LAYOUT_CONFIG.get(layout, LAYOUT_CONFIG["triple"])
+
+    # 自定义尺寸覆盖 layout 默认值
+    if size and "x" in size:
+        try:
+            w, h = int(size.split("x")[0]), int(size.split("x")[1])
+            count = cfg["count"]
+            panel_w = w // count
+            panels = [(panel_w, h)] * count
+            # 修正最后一个 panel 宽度以吸收整除余数
+            if panel_w * count != w:
+                panels[-1] = (w - panel_w * (count - 1), h)
+            cfg = {**cfg, "width": w, "height": h, "panels": panels}
+            print(f"[INFO]  Custom size override: {w}x{h}")
+        except (ValueError, IndexError):
+            print(f"[WARN]  Invalid size '{size}', using layout default")
+
     count_needed = cfg["count"]
 
     print(f"[INFO]  Layout: {layout}, Available: {len(images)}, Size: {cfg['width']}x{cfg['height']}")
@@ -172,7 +189,7 @@ def make_cover(folder, output, layout="triple", head_margin=0.15, quality=95,
 
     if candidates == 1:
         # 单候选：取前 N 张最佳图
-        path = make_single_cover(images_sorted, layout, head_margin, quality, output)
+        path = make_single_cover(images_sorted, layout, head_margin, quality, output, cfg_override=cfg)
         print(f"[OK]    Cover saved: {path}")
         results.append(path)
     else:
@@ -181,7 +198,7 @@ def make_cover(folder, output, layout="triple", head_margin=0.15, quality=95,
         # 取前 candidates 个不重复组合
         for idx, combo in enumerate(combos[:candidates]):
             suffix = f"_{chr(65 + idx)}"  # _A, _B, _C
-            path = make_single_cover(combo, layout, head_margin, quality, output, suffix)
+            path = make_single_cover(combo, layout, head_margin, quality, output, suffix, cfg_override=cfg)
             print(f"[OK]    Candidate {chr(65 + idx)}: {path}")
             results.append(path)
 

@@ -48,7 +48,7 @@ function coverUrl(path: string): string {
 }
 
 // Step 2 state
-const copyForm = ref({ protagonist: '', event: '', photos: '', video_desc: '', style: '反转打脸风', author: '编辑', categories: [] as string[] })
+const copyForm = ref({ protagonist: '', event: '', photos: '', video_desc: '', style: '反转打脸风', author: '编辑', categories: [] as string[], title_min: 15, title_max: 30, kw_count: 10, body_len: 800 })
 const editTitle = ref('')
 const editKeywords = ref('')
 const editBody = ref('')
@@ -328,7 +328,7 @@ async function handleGenerateCover() {
   isGeneratingCover.value = true
   store.coverCandidates = []
   try {
-    await store.generateCover(coverLayout.value, 3, coverHeadroom.value)
+    await store.generateCover(coverLayout.value, 3, coverHeadroom.value, coverSize.value)
     // WS 的 step_changed 事件会自动触发 loadTask 刷新封面数据
     // 这里只设置超时保护，不再轮询 API（避免与 WS 推送重复请求）
     if (coverPollTimer) clearInterval(coverPollTimer)
@@ -738,6 +738,12 @@ function handleDiscardDraft() {
                 </div>
                 <div class="form-group" style="flex:1"><label>作者</label><input v-model="copyForm.author" class="form-input" /></div>
               </div>
+              <div style="display:flex;gap:14px;margin-bottom:14px">
+                <div class="form-group" style="flex:1"><label>标题字数（最少）</label><input v-model.number="copyForm.title_min" type="number" class="form-input" min="5" max="50" /></div>
+                <div class="form-group" style="flex:1"><label>标题字数（最多）</label><input v-model.number="copyForm.title_max" type="number" class="form-input" min="10" max="80" /></div>
+                <div class="form-group" style="flex:1"><label>关键词数量</label><input v-model.number="copyForm.kw_count" type="number" class="form-input" min="3" max="30" /></div>
+                <div class="form-group" style="flex:1"><label>正文字数</label><input v-model.number="copyForm.body_len" type="number" class="form-input" min="200" max="3000" /></div>
+              </div>
               <div class="form-group" style="margin-bottom:14px">
                 <label>分类 <span v-if="store.dynamicCategories.length" style="font-size:10px;color:var(--t3)">(已从 {{ store.selectedPlatforms.length }} 个平台加载分类库)</span></label>
                 <!-- 已选分类标签 -->
@@ -972,7 +978,12 @@ function handleDiscardDraft() {
               <div v-if="info.progress !== undefined && info.status === 'publishing'" class="progress-bar" style="height:6px;margin-bottom:6px">
                 <div class="progress-fill" :style="{width:info.progress+'%',background:'var(--primary)'}" />
               </div>
-              <div v-if="info.error" style="font-size:11px;color:var(--red);margin-top:4px;padding:6px 8px;background:rgba(239,83,80,.08);border-radius:4px">{{ info.error }}</div>
+              <div v-if="info.error" style="margin-top:4px">
+                <details style="font-size:11px;color:var(--red);padding:6px 8px;background:rgba(239,83,80,.08);border-radius:4px;cursor:pointer">
+                  <summary style="display:flex;align-items:center;gap:4px;user-select:none">⚠️ 错误信息（点击展开）</summary>
+                  <pre style="margin-top:6px;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:10px;line-height:1.5;max-height:200px;overflow-y:auto">{{ info.error }}</pre>
+                </details>
+              </div>
             </div>
           </div>
           <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
