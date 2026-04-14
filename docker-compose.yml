@@ -28,8 +28,8 @@ services:
     volumes:
       # 配置文件 (热更新无需重建)
       - ./config.json:/app/config.json:ro
-      # 上传/输出持久化
-      - ./uploads:/app/uploads
+      # 上传/输出持久化（代码写入 /app/backend/uploads/）
+      - ./backend/uploads:/app/backend/uploads
       # 挂载本地素材目录 — 容器内可直接读取
       - /mnt/d/Users/Public/claude_ia:/mnt/materials
     environment:
