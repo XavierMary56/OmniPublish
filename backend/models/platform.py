@@ -9,11 +9,18 @@ class PlatformCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     dept: str = ""
     categories: List[str] = []
+    is_active: int = 1
+    # 图片水印
+    img_wm_file: str = ""
     img_wm_position: str = "bottom-right"
     img_wm_width: int = 264
     img_wm_opacity: int = 100
+    # 视频水印
+    vid_wm_file: str = ""
     vid_wm_mode: str = "corner-cycle"
     vid_wm_scale: int = 35
+    vid_wm_file2: str = ""
+    # 发布配置
     api_base_url: str = ""
     project_code: str = ""
     layout_template: str = ""
@@ -24,11 +31,18 @@ class PlatformUpdate(BaseModel):
     name: Optional[str] = None
     dept: Optional[str] = None
     categories: Optional[List[str]] = None
+    is_active: Optional[int] = None
+    # 图片水印
+    img_wm_file: Optional[str] = None
     img_wm_position: Optional[str] = None
     img_wm_width: Optional[int] = None
     img_wm_opacity: Optional[int] = None
+    # 视频水印
+    vid_wm_file: Optional[str] = None
     vid_wm_mode: Optional[str] = None
     vid_wm_scale: Optional[int] = None
+    vid_wm_file2: Optional[str] = None
+    # 发布配置
     api_base_url: Optional[str] = None
     project_code: Optional[str] = None
     layout_template: Optional[str] = None
