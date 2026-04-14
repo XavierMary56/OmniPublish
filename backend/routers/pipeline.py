@@ -692,8 +692,11 @@ async def upload_manual_cover(task_id: int, cover: UploadFile = File(...),
 @router.put("/{task_id}/step/4/confirm")
 async def confirm_cover(task_id: int, req: ConfirmCoverRequest, user: UserInfo = Depends(get_current_user)):
     """确认选中的封面。"""
-    cover_path = await cover_service.confirm_cover(task_id, req.cover_index)
-    return ApiResponse.success(data={"cover_path": cover_path}, message="封面已确认，进入 Step 5 水印处理")
+    try:
+        cover_path = await cover_service.confirm_cover(task_id, req.cover_index)
+        return ApiResponse.success(data={"cover_path": cover_path}, message="封面已确认，进入 Step 5 水印处理")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ══════════════════════════════════════════

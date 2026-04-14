@@ -108,8 +108,26 @@ class CoverService:
                 raise ValueError("任务不存在")
 
             candidates = json.loads(row["cover_candidates"] or "[]")
+
+            # 如果 cover_candidates 为空，尝试从素材目录自动扫描封面文件
             if not candidates:
-                raise ValueError("没有可用的封面候选")
+                folder_row = await conn.fetchrow("SELECT folder_path FROM tasks WHERE id = $1", task_id)
+                if folder_row and folder_row["folder_path"]:
+                    folder = folder_row["folder_path"]
+                    cover_files = sorted([
+                        os.path.join(folder, f) for f in os.listdir(folder)
+                        if "_cover_" in f.lower() or f.endswith(("_cover_A.jpg", "_cover_B.jpg", "_cover_C.jpg"))
+                    ])
+                    if cover_files:
+                        candidates = cover_files
+                        # 补存到数据库
+                        await conn.execute(
+                            "UPDATE tasks SET cover_candidates = $1 WHERE id = $2",
+                            json.dumps(candidates, ensure_ascii=False), task_id,
+                        )
+
+            if not candidates:
+                raise ValueError("没有可用的封面候选，请先点击「生成封面候选」")
             if cover_index < 0 or cover_index >= len(candidates):
                 raise ValueError(f"封面索引超出范围: {cover_index}，有效范围 0-{len(candidates) - 1}")
 
