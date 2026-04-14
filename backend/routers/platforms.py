@@ -198,23 +198,57 @@ async def import_categories(platform_id: int, file: UploadFile = File(...)):
 # 水印文件上传
 # ══════════════════════════════════════════
 
+def _to_pinyin_filename(name: str) -> str:
+    """中文平台名转拼音文件名（简单映射，不依赖三方库）。"""
+    import re
+    import unicodedata
+    # 先去掉特殊字符，保留中文和英文
+    cleaned = re.sub(r'[^\w\u4e00-\u9fff]', '_', name).strip('_')
+    if not cleaned:
+        return "watermark"
+    # 如果全是英文/数字，直接用
+    if re.match(r'^[a-zA-Z0-9_]+$', cleaned):
+        return cleaned.lower()
+    # 简单的中文→拼音首字母映射（常用平台）
+    pinyin_map = {
+        '海角社区': 'haijiao', '黑料情报局': 'heiliao_qbj', '黑料吃瓜网': 'heiliao_cgw',
+        '男同网': 'nantong', '色花堂': 'sehuatang', '糖心': 'tangxin',
+        '妻友': 'qiyou', '玩物社区': 'wanwu', '尤物百科': 'youwu_bk',
+        '小蓝视频网': 'xiaolan', '草榴社区': 'caoliu', '禁漫天堂': 'jinman',
+        '麻豆传媒': 'madou', '抖阴': 'douyin', '推特社区': 'twitter',
+        '黄色仓库': 'huangse_ck', '东南亚大事件': 'dny_dsj', '料壶网': 'liaohu',
+        '吃瓜黑料中心': 'cg_hlzx', '小蓝吃瓜爆料': 'xl_cgbl', '第一吃瓜网': 'dycg',
+        '海角乱伦': 'haijiao_ll', '小黄书WEB': 'xiaohuangshu',
+    }
+    if name in pinyin_map:
+        return pinyin_map[name]
+    # 回退：用拼音首字母（简陋但够用）
+    return re.sub(r'[^a-zA-Z0-9]', '', cleaned.lower()) or "watermark"
+
+
 @router.post("/upload-watermark")
 async def upload_watermark(
     file: UploadFile = File(...),
     type: str = Query(default="img"),
+    platform_name: str = Query(default=""),
     user: UserInfo = Depends(get_current_user),
 ):
-    """上传水印文件（图片 PNG 或视频 MOV），返回存储路径。"""
+    """上传水印文件（图片 PNG/JPG 或视频 MOV），自动以平台拼音命名。"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名为空")
 
     ext = os.path.splitext(file.filename)[1].lower()
-    allowed = {".png", ".jpg", ".jpeg"} if type == "img" else {".png", ".mov"}
+    allowed = {".png", ".jpg", ".jpeg"} if type == "img" else {".png", ".mov", ".mp4"}
     if ext not in allowed:
         raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}，允许: {', '.join(allowed)}")
 
-    # 安全文件名
-    safe_name = os.path.basename(file.filename)
+    # 用平台拼音生成文件名
+    if platform_name:
+        base_name = _to_pinyin_filename(platform_name)
+        suffix = "_logo" if type == "img" else "_wm"
+        safe_name = f"{base_name}{suffix}{ext}"
+    else:
+        safe_name = os.path.basename(file.filename)
 
     # 读取文件内容
     content = await file.read()

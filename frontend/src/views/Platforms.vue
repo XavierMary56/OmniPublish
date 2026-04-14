@@ -119,7 +119,8 @@ async function uploadWatermark(e: Event, type: 'img' | 'vid') {
   wmUploadProgress.value = 0
 
   try {
-    const res = await http.post(`/platforms/upload-watermark?type=${type}`, formData, {
+    const pname = encodeURIComponent(form.value.name || '')
+    const res = await http.post(`/platforms/upload-watermark?type=${type}&platform_name=${pname}`, formData, {
       headers: { 'Content-Type': undefined },
       timeout: 300000, // 5 分钟超时（大 MOV 文件）
       onUploadProgress: (e) => {
@@ -173,7 +174,7 @@ function replaceWatermark(type: 'img' | 'vid') {
 // 编辑时预览已有水印
 function initWmPreviews() {
   if (form.value.img_wm_file) {
-    imgWmPreview.value = '/api/uploads/watermarks/' + form.value.img_wm_file.split('/').pop()
+    imgWmPreview.value = '/uploads/watermarks/' + form.value.img_wm_file.split('/').pop()
   } else {
     imgWmPreview.value = ''
   }
@@ -227,8 +228,17 @@ onMounted(load)
           </div>
         </div>
         <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px">
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">图片水印</span><span>{{ p.img_wm_file || '未配置' }}</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">视频水印</span><span>{{ p.vid_wm_file || '未配置' }}</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--t3)">图片水印</span>
+            <span v-if="p.img_wm_file" style="display:flex;align-items:center;gap:4px">
+              <img :src="'/uploads/watermarks/' + p.img_wm_file.split('/').pop()" style="height:18px;width:auto;border-radius:2px;background:#333" @error="($event.target as HTMLImageElement).style.display='none'" />
+              <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.img_wm_file.split('/').pop() }}</span>
+            </span>
+            <span v-else style="color:var(--t3)">未配置</span>
+          </div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">视频水印</span>
+            <span v-if="p.vid_wm_file">{{ p.vid_wm_file.split('/').pop() }}</span>
+            <span v-else style="color:var(--t3)">未配置</span>
+          </div>
           <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">水印模式</span><span>{{ p.vid_wm_mode === 'corner-cycle' ? '四角轮转' : p.vid_wm_mode === 'fixed' ? '固定位置' : p.vid_wm_mode === 'diagonal' ? '双水印对角' : p.vid_wm_mode || '—' }}</span></div>
           <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">分类库</span><span>{{ (p.categories||[]).length }} 个</span></div>
           <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">API 入口</span><span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.api_base_url || '未配置' }}</span></div>
