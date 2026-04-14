@@ -104,13 +104,12 @@ async function uploadWatermark(e: Event, type: 'img' | 'vid') {
 
   const formData = new FormData()
   formData.append('file', file)
-  formData.append('type', type)
 
   if (type === 'img') isUploadingImgWm.value = true
   else isUploadingVidWm.value = true
 
   try {
-    const res = await http.post('/platforms/upload-watermark', formData, {
+    const res = await http.post(`/platforms/upload-watermark?type=${type}`, formData, {
       headers: { 'Content-Type': undefined },
     })
     const data = res.data?.data ?? res.data
@@ -280,16 +279,16 @@ onMounted(load)
                 <button class="btn btn-ghost btn-sm" @click="replaceWatermark('img')" style="white-space:nowrap">替换</button>
               </div>
               <!-- 未上传：显示上传区域 -->
-              <label v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
-                     @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
-                     @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
+              <div v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
+                   @click="replaceWatermark('img')"
+                   @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
+                   @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
                 <span v-if="isUploadingImgWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
                 <template v-else>
                   <span style="font-size:20px">🖼️</span>
-                  <span style="font-size:12px;color:var(--primary)">点击上传 或 拖入图片水印</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传图片水印</span>
                 </template>
-                <input type="file" accept="image/png,.png" style="display:none" @change="uploadWatermark($event, 'img')" />
-              </label>
+              </div>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">PNG 透明底，建议宽度 200~400px</div>
             </div>
             <div class="form-group" style="flex:1"><label>水印位置</label>
@@ -319,16 +318,16 @@ onMounted(load)
                 <button class="btn btn-ghost btn-sm" @click="replaceWatermark('vid')" style="white-space:nowrap">替换</button>
               </div>
               <!-- 未上传 -->
-              <label v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
-                     @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
-                     @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
+              <div v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
+                   @click="replaceWatermark('vid')"
+                   @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
+                   @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
                 <span v-if="isUploadingVidWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
                 <template v-else>
                   <span style="font-size:20px">🎬</span>
-                  <span style="font-size:12px;color:var(--primary)">点击上传 或 拖入视频水印</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传视频水印</span>
                 </template>
-                <input type="file" accept=".mov,.png,image/png,video/quicktime" style="display:none" @change="uploadWatermark($event, 'vid')" />
-              </label>
+              </div>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">MOV 透明通道 或 PNG 静态水印</div>
             </div>
             <div class="form-group" style="flex:1"><label>水印模式</label>
