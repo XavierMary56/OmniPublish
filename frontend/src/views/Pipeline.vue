@@ -17,6 +17,7 @@ const folderInput = ref<HTMLInputElement | null>(null)
 
 const localPathInput = ref('')
 const wmPlan = ref<any[]>([])
+const wmSkipped = ref<any[]>([])
 
 // 平台 ID → 名称映射（从平台列表构建）
 const platformNameMap = computed(() => {
@@ -449,8 +450,9 @@ watch(() => store.currentStep, async (step) => {
   if (step === 4 && store.taskId) {
     try {
       const plan = await api('GET', `/pipeline/${store.taskId}/step/5/plan`)
-      wmPlan.value = plan.platforms || plan || []
-    } catch { wmPlan.value = [] }
+      wmPlan.value = plan.platforms || []
+      wmSkipped.value = plan.skipped || []
+    } catch { wmPlan.value = []; wmSkipped.value = [] }
   }
 })
 
@@ -935,10 +937,24 @@ function handleDiscardDraft() {
               </div>
             </div>
 
-            <div style="padding:12px 16px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2);margin-bottom:14px">
-              💡 共 {{ store.selectedPlatforms.length }} 个平台 · 预计耗时 ~{{ Math.max(1, store.selectedPlatforms.length) }} 分钟
+            <!-- 无水印平台提示 -->
+            <div v-if="wmSkipped.length" style="padding:12px 16px;background:rgba(255,183,77,.06);border:1px solid rgba(255,183,77,.2);border-radius:8px;font-size:12px;color:var(--orange);margin-bottom:14px">
+              ⚠️ 以下 {{ wmSkipped.length }} 个平台<strong>未配置水印</strong>，将跳过水印处理直接进入发布：
+              <span v-for="(p, i) in wmSkipped" :key="p.id">{{ p.name }}<template v-if="i < wmSkipped.length - 1">、</template></span>
+              <div style="margin-top:4px;font-size:11px;color:var(--t3)">可在「业务线管理」中上传水印文件后重新处理</div>
             </div>
-            <button class="btn btn-green" @click="handleConfirmWatermark">✅ 确认水印方案，开始处理 →</button>
+
+            <div style="padding:12px 16px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2);margin-bottom:14px">
+              <template v-if="wmPlan.length">
+                💡 共 {{ wmPlan.length }} 个平台需要水印处理 · 预计耗时 ~{{ Math.max(1, wmPlan.length) }} 分钟
+              </template>
+              <template v-else>
+                💡 所有选中平台均未配置水印，点击下方按钮直接跳过进入发布
+              </template>
+            </div>
+            <button class="btn btn-green" @click="handleConfirmWatermark">
+              {{ wmPlan.length ? '✅ 确认水印方案，开始处理 →' : '⏭️ 跳过水印，直接发布 →' }}
+            </button>
           </div>
           <div v-else style="display:flex;flex-direction:column;gap:10px">
             <div v-for="(info, pid) in store.wmProgress" :key="pid"

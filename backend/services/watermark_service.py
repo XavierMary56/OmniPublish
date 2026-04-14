@@ -22,17 +22,17 @@ from image_watermark import process_folder as watermark_images
 class WatermarkService:
     """水印处理服务。"""
 
-    async def get_watermark_plan(self, task_id: int) -> list:
-        """获取各平台的水印方案。"""
+    async def get_watermark_plan(self, task_id: int) -> dict:
+        """获取各平台的水印方案，区分有水印和无水印的平台。"""
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT target_platforms FROM tasks WHERE id = $1", task_id)
             if not row:
-                return []
+                return {"platforms": [], "skipped": [], "total": 0, "with_wm_count": 0, "without_wm_count": 0}
 
             platform_ids = json.loads(row["target_platforms"])
             if not platform_ids:
-                return []
+                return {"platforms": [], "skipped": [], "total": 0, "with_wm_count": 0, "without_wm_count": 0}
 
             placeholders = ",".join(f"${i+1}" for i in range(len(platform_ids)))
             rows = await conn.fetch(
@@ -41,19 +41,62 @@ class WatermarkService:
                     FROM platforms WHERE id IN ({placeholders})""",
                 *platform_ids,
             )
-            return [dict(r) for r in rows]
+
+            with_wm = []
+            without_wm = []
+            for r in rows:
+                p = dict(r)
+                has_img = bool(p.get("img_wm_file"))
+                has_vid = bool(p.get("vid_wm_file"))
+                p["has_img_wm"] = has_img
+                p["has_vid_wm"] = has_vid
+                p["has_any_wm"] = has_img or has_vid
+                p["wm_image"] = os.path.basename(p["img_wm_file"]) if has_img else None
+                p["wm_video"] = os.path.basename(p["vid_wm_file"]) if has_vid else None
+                p["wm_position"] = p.get("img_wm_position", "bottom-right")
+                p["wm_width"] = p.get("img_wm_width", 264)
+                p["platform_id"] = p["id"]
+                if p["has_any_wm"]:
+                    with_wm.append(p)
+                else:
+                    without_wm.append(p)
+
+            return {
+                "platforms": with_wm,
+                "skipped": without_wm,
+                "total": len(with_wm) + len(without_wm),
+                "with_wm_count": len(with_wm),
+                "without_wm_count": len(without_wm),
+            }
 
     async def process_all_platforms(self, task_id: int):
         """确认后并行处理所有平台的水印。"""
         await pipeline_service.update_step_status(task_id, step=4, status="running")
         await pipeline_service.add_log(task_id, "开始并行水印处理", step=4)
 
-        plan = await self.get_watermark_plan(task_id)
-        if not plan:
+        plan_data = await self.get_watermark_plan(task_id)
+        plan = plan_data.get("platforms", []) if isinstance(plan_data, dict) else plan_data
+        skipped = plan_data.get("skipped", []) if isinstance(plan_data, dict) else []
+
+        if not plan and not skipped:
             await pipeline_service.update_step_status(
                 task_id, step=4, status="failed", error="没有目标平台"
             )
             return
+
+        # 没有任何平台配了水印，直接跳到下一步
+        if not plan:
+            await pipeline_service.add_log(
+                task_id, f"所有 {len(skipped)} 个平台均未配置水印，跳过水印处理", step=4
+            )
+            await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
+            return
+
+        if skipped:
+            names = ", ".join(p["name"] for p in skipped)
+            await pipeline_service.add_log(
+                task_id, f"跳过 {len(skipped)} 个未配置水印的平台: {names}", step=4
+            )
 
         # 获取任务文件夹
         pool = await get_pool()
