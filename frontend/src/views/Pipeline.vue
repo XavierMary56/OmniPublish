@@ -408,6 +408,19 @@ async function handleConfirmWatermark() {
   isSubmitting.value = true
   try {
     await store.confirmWatermark()
+    // 轮询等待水印处理完成或跳过
+    const pollWm = setInterval(async () => {
+      if (!store.taskId) { clearInterval(pollWm); return }
+      try {
+        await store.loadTask(store.taskId)
+        // 如果已经推进到下一步（Step 5 = 发布），停止轮询
+        if (store.currentStep >= 5) {
+          clearInterval(pollWm)
+        }
+      } catch {}
+    }, 3000)
+    // 60秒后无论如何停止轮询
+    setTimeout(() => clearInterval(pollWm), 60000)
   } catch (e: any) {
     alert(e.response?.data?.detail || e.message || '确认水印失败')
   } finally {

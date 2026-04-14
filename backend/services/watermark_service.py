@@ -84,12 +84,37 @@ class WatermarkService:
             )
             return
 
+        # 标记跳过的平台 wm_status = 'skipped'
+        if skipped:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                for p in skipped:
+                    await conn.execute(
+                        "UPDATE platform_tasks SET wm_status = 'skipped', wm_progress = 100 WHERE task_id = $1 AND platform_id = $2",
+                        task_id, p["platform_id"],
+                    )
+            # 通过 WebSocket 通知前端
+            for p in skipped:
+                await pipeline_service.ws_manager.send_to_task(task_id, {
+                    "type": "platform_update",
+                    "platform_id": p["platform_id"],
+                    "wm_status": "skipped",
+                    "wm_progress": 100,
+                })
+
         # 没有任何平台配了水印，直接跳到下一步
         if not plan:
             await pipeline_service.add_log(
                 task_id, f"所有 {len(skipped)} 个平台均未配置水印，跳过水印处理", step=4
             )
             await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
+            # 通知前端步骤变化
+            await pipeline_service.ws_manager.send_to_task(task_id, {
+                "type": "step_changed",
+                "step": 4,
+                "status": "done",
+                "to_step": 5,
+            })
             return
 
         if skipped:
