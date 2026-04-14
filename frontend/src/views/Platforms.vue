@@ -97,43 +97,76 @@ const vidWmPreview = ref('')
 const isUploadingImgWm = ref(false)
 const isUploadingVidWm = ref(false)
 
+const wmUploadProgress = ref(0)
+
 async function uploadWatermark(e: Event, type: 'img' | 'vid') {
   const input = e.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
+
+  // 文件大小检查
+  const sizeMB = file.size / 1024 / 1024
+  if (sizeMB > 200) {
+    alert(`文件太大 (${sizeMB.toFixed(1)}MB)，水印文件建议不超过 200MB`)
+    return
+  }
 
   const formData = new FormData()
   formData.append('file', file)
 
   if (type === 'img') isUploadingImgWm.value = true
   else isUploadingVidWm.value = true
+  wmUploadProgress.value = 0
 
   try {
     const res = await http.post(`/platforms/upload-watermark?type=${type}`, formData, {
       headers: { 'Content-Type': undefined },
+      timeout: 300000, // 5 分钟超时（大 MOV 文件）
+      onUploadProgress: (e) => {
+        if (e.total) wmUploadProgress.value = Math.round((e.loaded / e.total) * 100)
+      },
     })
     const data = res.data?.data ?? res.data
     if (type === 'img') {
       form.value.img_wm_file = data.path
       imgWmPreview.value = data.preview_url || ''
+      if (data.converted) {
+        console.log('JPG 已自动转换为 PNG')
+      }
     } else {
       form.value.vid_wm_file = data.path
       vidWmPreview.value = data.filename || file.name
     }
+    wmUploadProgress.value = 100
   } catch (err: any) {
-    alert('上传失败: ' + (err.response?.data?.detail || '未知错误'))
+    const detail = err.response?.data?.detail || err.message || '未知错误'
+    alert(`水印上传失败: ${detail}`)
+    console.error('Watermark upload error:', err)
   } finally {
     if (type === 'img') isUploadingImgWm.value = false
     else isUploadingVidWm.value = false
-    input.value = ''
+    wmUploadProgress.value = 0
+    try { input.value = '' } catch {}
   }
 }
 
 function replaceWatermark(type: 'img' | 'vid') {
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = type === 'img' ? 'image/png,image/jpeg,.png,.jpg,.jpeg' : '.mov,.png,image/png,video/quicktime'
-  input.onchange = (e) => uploadWatermark(e, type)
+  // 视频水印放宽格式限制：MOV/MP4/PNG 都接受
+  input.accept = type === 'img'
+    ? 'image/png,image/jpeg,.png,.jpg,.jpeg'
+    : '.mov,.mp4,.png,video/quicktime,video/mp4,image/png'
+  input.style.display = 'none'
+  document.body.appendChild(input) // 必须挂到 DOM 上，某些浏览器才能触发
+  input.onchange = (e) => {
+    uploadWatermark(e, type)
+    document.body.removeChild(input) // 用完移除
+  }
+  // 用户取消选择时也清理
+  input.addEventListener('cancel', () => {
+    document.body.removeChild(input)
+  })
   input.click()
 }
 
@@ -283,10 +316,10 @@ onMounted(load)
                    @click="replaceWatermark('img')"
                    @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
                    @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
-                <span v-if="isUploadingImgWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
+                <span v-if="isUploadingImgWm" style="font-size:13px;color:var(--primary)">⏳ 上传中 {{ wmUploadProgress }}%</span>
                 <template v-else>
                   <span style="font-size:20px">🖼️</span>
-                  <span style="font-size:12px;color:var(--primary)">点击上传图片水印</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传图片水印 (PNG/JPG)</span>
                 </template>
               </div>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">支持 PNG/JPG，JPG 会自动转 PNG 透明底，建议宽度 200~400px</div>
@@ -322,10 +355,10 @@ onMounted(load)
                    @click="replaceWatermark('vid')"
                    @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
                    @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
-                <span v-if="isUploadingVidWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
+                <span v-if="isUploadingVidWm" style="font-size:13px;color:var(--primary)">⏳ 上传中 {{ wmUploadProgress }}%</span>
                 <template v-else>
                   <span style="font-size:20px">🎬</span>
-                  <span style="font-size:12px;color:var(--primary)">点击上传视频水印</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传视频水印 (MOV/PNG)</span>
                 </template>
               </div>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">MOV 透明通道 或 PNG 静态水印</div>
