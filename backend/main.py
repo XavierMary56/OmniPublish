@@ -35,7 +35,7 @@ from websocket.manager import ws_manager
 from middleware.auth import decode_token
 
 # ── 路由导入 ──
-from routers import auth, pipeline, tasks, platforms, stats, tools
+from routers import auth, pipeline, tasks, platforms, stats, tools, accounts
 
 
 # ── 生命周期 ──
@@ -127,6 +127,7 @@ app.include_router(tasks.router)
 app.include_router(platforms.router)
 app.include_router(stats.router)
 app.include_router(tools.router)
+app.include_router(accounts.router)
 
 # ── 静态文件：上传目录（封面预览等） ──
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
