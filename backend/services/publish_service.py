@@ -51,14 +51,29 @@ class PublishService:
         return self._clients[pid]
 
     async def _ensure_login(self, client: RemotePublishClient, platform: dict):
-        """确保 client 已登录（使用平台保存的凭据）。"""
+        """确保 client 已登录。优先从 accounts 表获取凭据，兼容 platform 直接传入的凭据。"""
         if client.token:
             return
 
-        username = platform.get("cms_username", "")
-        password = platform.get("cms_password", "")
+        # 优先从 platform dict 中获取（JOIN 查询时已带上）
+        username = platform.get("acc_username", "") or platform.get("cms_username", "")
+        password = platform.get("acc_password", "") or platform.get("cms_password", "")
+
+        # 如果没有，从 accounts 表查询
         if not username or not password:
-            raise ValueError(f"平台 {platform.get('name', '?')} 未配置登录凭据")
+            pid = platform.get("id") or platform.get("platform_id")
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                acc = await conn.fetchrow(
+                    "SELECT username, password_encrypted FROM accounts WHERE platform_id = $1",
+                    pid,
+                )
+                if acc:
+                    username = acc["username"] or ""
+                    password = acc["password_encrypted"] or ""
+
+        if not username or not password:
+            raise ValueError(f"平台 {platform.get('name', '?')} 未配置登录凭据，请在「账号管理」中添加")
 
         # 在线程池中执行同步的登录操作
         await asyncio.to_thread(client.get_projects)
@@ -79,21 +94,26 @@ class PublishService:
                 placeholders = ",".join(f"${i+2}" for i in range(len(platform_ids)))
                 pt_rows_raw = await conn.fetch(
                     f"""SELECT pt.*, p.name, p.api_base_url, p.project_code,
-                        p.layout_template, p.cms_username, p.cms_password,
-                        p.categories as platform_cats
+                        p.layout_template,
+                        p.categories as platform_cats,
+                        a.username as acc_username, a.password_encrypted as acc_password
                         FROM platform_tasks pt
                         JOIN platforms p ON pt.platform_id = p.id
+                        LEFT JOIN accounts a ON a.platform_id = p.id
                         WHERE pt.task_id = $1 AND pt.platform_id IN ({placeholders})""",
                     task_id, *platform_ids,
                 )
             else:
                 pt_rows_raw = await conn.fetch(
                     """SELECT pt.*, p.name, p.api_base_url, p.project_code,
-                       p.layout_template, p.cms_username, p.cms_password,
-                       p.categories as platform_cats
+                       p.layout_template,
+                       p.categories as platform_cats,
+                       a.username as acc_username, a.password_encrypted as acc_password
                        FROM platform_tasks pt
                        JOIN platforms p ON pt.platform_id = p.id
-                       WHERE pt.task_id = $1 AND pt.wm_status = 'done'
+                       LEFT JOIN accounts a ON a.platform_id = p.id
+                       WHERE pt.task_id = $1
+                       AND (pt.wm_status IN ('done', 'skipped', 'pending'))
                        AND pt.publish_status IN ('pending', 'failed')""",
                     task_id,
                 )
@@ -308,12 +328,30 @@ class PublishService:
                 )
 
             # ── 8. 组装帖子正文 ──
+            # build_markdown 期望 sections = [{"h": "标题", "p": "段落"}]
+            sections = []
+            if body_text:
+                # 按段落拆分，支持 ## 标题
+                current_h = ""
+                current_p = []
+                for line in body_text.split("\n"):
+                    stripped = line.strip()
+                    if stripped.startswith("## "):
+                        if current_p or current_h:
+                            sections.append({"h": current_h, "p": "\n".join(current_p)})
+                        current_h = stripped[3:].strip()
+                        current_p = []
+                    elif stripped:
+                        current_p.append(stripped)
+                if current_p or current_h:
+                    sections.append({"h": current_h, "p": "\n".join(current_p)})
+
             meta = {
                 "title": title,
                 "author": author,
                 "category": category_str,
                 "keywords": keywords,
-                "sections": [{"text": body_text}] if body_text else [],
+                "sections": sections,
             }
             body = await asyncio.to_thread(
                 build_markdown, meta, image_urls, video_entries, layout_template or None
@@ -392,9 +430,10 @@ class PublishService:
             row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
             pt_row = await conn.fetchrow(
                 """SELECT pt.*, p.name, p.api_base_url, p.project_code,
-                   p.cms_username, p.cms_password
+                   a.username as acc_username, a.password_encrypted as acc_password
                    FROM platform_tasks pt
                    JOIN platforms p ON pt.platform_id = p.id
+                   LEFT JOIN accounts a ON a.platform_id = p.id
                    WHERE pt.task_id = $1 AND pt.platform_id = $2""",
                 task_id, platform_id,
             )
