@@ -192,3 +192,67 @@ async def import_categories(platform_id: int, file: UploadFile = File(...)):
             "imported": len(categories),
             "categories": categories,
         })
+
+
+# ══════════════════════════════════════════
+# 水印文件上传
+# ══════════════════════════════════════════
+
+@router.post("/upload-watermark")
+async def upload_watermark(
+    file: UploadFile = File(...),
+    type: str = Query(default="img"),
+    user: UserInfo = Depends(get_current_user),
+):
+    """上传水印文件（图片 PNG 或视频 MOV），返回存储路径。"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名为空")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    allowed = {".png"} if type == "img" else {".png", ".mov"}
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}，允许: {', '.join(allowed)}")
+
+    # 安全文件名
+    safe_name = os.path.basename(file.filename)
+    dest = WM_DIR / safe_name
+
+    # 如果同名文件已存在，加序号
+    counter = 1
+    while dest.exists():
+        name_only = os.path.splitext(safe_name)[0]
+        dest = WM_DIR / f"{name_only}_{counter}{ext}"
+        counter += 1
+
+    # 写入文件
+    content = await file.read()
+    with open(dest, "wb") as fp:
+        fp.write(content)
+
+    # 获取文件信息
+    file_size = len(content)
+    rel_path = str(dest.relative_to(UPLOADS_DIR))
+
+    result = {
+        "path": str(dest),
+        "rel_path": rel_path,
+        "filename": dest.name,
+        "size": file_size,
+        "size_kb": round(file_size / 1024, 1),
+    }
+
+    # 图片水印返回预览 URL
+    if type == "img" and ext == ".png":
+        result["preview_url"] = f"/uploads/watermarks/{dest.name}"
+
+        # 尝试获取图片尺寸
+        try:
+            from PIL import Image
+            img = Image.open(dest)
+            result["width"] = img.width
+            result["height"] = img.height
+            result["dimensions"] = f"{img.width}×{img.height}px"
+        except Exception:
+            pass
+
+    return ApiResponse.success(data=result)

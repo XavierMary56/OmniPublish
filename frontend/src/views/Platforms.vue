@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { api } from '../api/http'
+import http, { api } from '../api/http'
 
 const platforms = ref<any[]>([])
 const deptFilter = ref('')
@@ -10,7 +10,7 @@ const catInput = ref('')
 
 // 分页
 const page = ref(1)
-const pageSize = 12
+const pageSize = 15
 
 const form = ref({
   name: '', dept: '', categories: [] as string[], is_active: 1,
@@ -48,6 +48,8 @@ function openAdd() {
     vid_wm_file: '', vid_wm_mode: 'corner-cycle', vid_wm_scale: 35, vid_wm_file2: '',
     api_base_url: '', project_code: '', layout_template: '',
   }
+  imgWmPreview.value = ''
+  vidWmPreview.value = ''
   showModal.value = true
 }
 
@@ -62,6 +64,7 @@ function openEdit(p: any) {
     api_base_url: p.api_base_url || '', project_code: p.project_code || '',
     layout_template: p.layout_template || '',
   }
+  initWmPreviews()
   showModal.value = true
 }
 
@@ -87,6 +90,63 @@ function addCat() {
   catInput.value = ''
 }
 function removeCat(c: string) { form.value.categories = form.value.categories.filter(x => x !== c) }
+
+// 水印文件上传
+const imgWmPreview = ref('')
+const vidWmPreview = ref('')
+const isUploadingImgWm = ref(false)
+const isUploadingVidWm = ref(false)
+
+async function uploadWatermark(e: Event, type: 'img' | 'vid') {
+  const input = e.target as HTMLInputElement
+  if (!input.files?.length) return
+  const file = input.files[0]
+
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('type', type)
+
+  if (type === 'img') isUploadingImgWm.value = true
+  else isUploadingVidWm.value = true
+
+  try {
+    const res = await http.post('/platforms/upload-watermark', formData, {
+      headers: { 'Content-Type': undefined },
+    })
+    const data = res.data?.data ?? res.data
+    if (type === 'img') {
+      form.value.img_wm_file = data.path
+      imgWmPreview.value = data.preview_url || ''
+    } else {
+      form.value.vid_wm_file = data.path
+      vidWmPreview.value = data.filename || file.name
+    }
+  } catch (err: any) {
+    alert('上传失败: ' + (err.response?.data?.detail || '未知错误'))
+  } finally {
+    if (type === 'img') isUploadingImgWm.value = false
+    else isUploadingVidWm.value = false
+    input.value = ''
+  }
+}
+
+function replaceWatermark(type: 'img' | 'vid') {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = type === 'img' ? 'image/png,.png' : '.mov,.png,image/png,video/quicktime'
+  input.onchange = (e) => uploadWatermark(e, type)
+  input.click()
+}
+
+// 编辑时预览已有水印
+function initWmPreviews() {
+  if (form.value.img_wm_file) {
+    imgWmPreview.value = '/api/uploads/watermarks/' + form.value.img_wm_file.split('/').pop()
+  } else {
+    imgWmPreview.value = ''
+  }
+  vidWmPreview.value = form.value.vid_wm_file ? form.value.vid_wm_file.split('/').pop() || '' : ''
+}
 
 onMounted(load)
 </script>
@@ -209,7 +269,27 @@ onMounted(load)
           <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
             <div class="form-group" style="flex:2;min-width:200px">
               <label>水印文件 (PNG)</label>
-              <input v-model="form.img_wm_file" class="form-input" placeholder="watermark/91video_logo.png" />
+              <!-- 已上传：显示预览 + 替换按钮 -->
+              <div v-if="form.img_wm_file" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--green);border-radius:8px">
+                <img v-if="imgWmPreview" :src="imgWmPreview" style="height:40px;width:auto;max-width:120px;object-fit:contain;background:repeating-conic-gradient(#333 0% 25%, #444 0% 50%) 50% / 10px 10px;border-radius:4px" />
+                <span v-else style="font-size:20px">🖼️</span>
+                <div style="flex:1;overflow:hidden">
+                  <div style="font-size:12px;color:var(--t1);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ form.img_wm_file.split('/').pop() }}</div>
+                  <div v-if="imgWmPreview" style="font-size:10px;color:var(--t3)">PNG 透明底</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" @click="replaceWatermark('img')" style="white-space:nowrap">替换</button>
+              </div>
+              <!-- 未上传：显示上传区域 -->
+              <label v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
+                     @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
+                     @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
+                <span v-if="isUploadingImgWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
+                <template v-else>
+                  <span style="font-size:20px">🖼️</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传 或 拖入图片水印</span>
+                </template>
+                <input type="file" accept="image/png,.png" style="display:none" @change="uploadWatermark($event, 'img')" />
+              </label>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">PNG 透明底，建议宽度 200~400px</div>
             </div>
             <div class="form-group" style="flex:1"><label>水印位置</label>
@@ -229,7 +309,26 @@ onMounted(load)
           <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
             <div class="form-group" style="flex:2;min-width:200px">
               <label>水印文件 (.mov/.png)</label>
-              <input v-model="form.vid_wm_file" class="form-input" placeholder="watermark/91video.mov" />
+              <!-- 已上传 -->
+              <div v-if="form.vid_wm_file" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--green);border-radius:8px">
+                <span style="font-size:20px">🎬</span>
+                <div style="flex:1;overflow:hidden">
+                  <div style="font-size:12px;color:var(--t1);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ vidWmPreview || form.vid_wm_file.split('/').pop() }}</div>
+                  <div style="font-size:10px;color:var(--t3)">MOV 透明通道 或 PNG 静态水印</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" @click="replaceWatermark('vid')" style="white-space:nowrap">替换</button>
+              </div>
+              <!-- 未上传 -->
+              <label v-else style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px;border:2px dashed var(--bd);border-radius:8px;cursor:pointer;transition:.2s"
+                     @mouseenter="($event.currentTarget as HTMLElement).style.borderColor='var(--primary)'"
+                     @mouseleave="($event.currentTarget as HTMLElement).style.borderColor='var(--bd)'">
+                <span v-if="isUploadingVidWm" style="font-size:13px;color:var(--primary)">⏳ 上传中...</span>
+                <template v-else>
+                  <span style="font-size:20px">🎬</span>
+                  <span style="font-size:12px;color:var(--primary)">点击上传 或 拖入视频水印</span>
+                </template>
+                <input type="file" accept=".mov,.png,image/png,video/quicktime" style="display:none" @change="uploadWatermark($event, 'vid')" />
+              </label>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">MOV 透明通道 或 PNG 静态水印</div>
             </div>
             <div class="form-group" style="flex:1"><label>水印模式</label>
