@@ -1,12 +1,11 @@
 {
-  "_说明": "OmniPublish V2.0 全局配置 — 复制为 config.json 后填入你的实际信息",
+  "_说明": "OmniPublish V2.0 配置文件 — 复制为 config.json 后填入真实值",
 
-  "api_base": "",
-  "api_key": "",
+  "api_base": "https://api.openai.com",
+  "api_key": "sk-xxxx你的密钥xxxx",
   "cw_model": "gpt-4o",
 
   "crypto": {
-    "_说明": "平台 API 加密密钥（原从代码硬编码迁移至此）",
     "appkey": "",
     "aes_key": "",
     "aes_iv": "",
@@ -17,8 +16,9 @@
 
   "server": {
     "port": 9527,
-    "auth_token": "",
-    "allowed_origins": ["http://127.0.0.1:9527"]
+    "auth_token": "change-me-in-production",
+    "allowed_origins": ["*"],
+    "token_expire_hours": 24
   },
 
   "yolo": {
@@ -36,10 +36,5 @@
     "video_codec": "auto",
     "video_bitrate": "2M",
     "video_fps": 30
-  },
-
-  "rate_limit": {
-    "_说明": "API 请求限速（秒），防止触发平台封号",
-    "min_interval": 1.0
   }
 }

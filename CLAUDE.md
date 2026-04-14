@@ -13,7 +13,7 @@ OmniPublish V2.0 是面向内容编辑团队的**全链路发帖工作台**。
 |---|------|------|
 | 后端 | FastAPI (Python) | Python 3.10+ |
 | 前端 | Vue 3 + TypeScript + Vite | Vue 3.4+ |
-| 数据库 | SQLite (WAL 模式) | 内置 |
+| 数据库 | PostgreSQL 15 | Docker 容器 |
 | 实时推送 | WebSocket (fastapi) | 内置 |
 | 图片处理 | Pillow + YOLOv8 | ultralytics 8.0+ |
 | 视频处理 | FFmpeg (外部二进制) | FFmpeg 5.0+ |
@@ -30,7 +30,7 @@ OmniPublish/
 ├── backend/
 │   ├── main.py            FastAPI 入口
 │   ├── config.py          配置加载
-│   ├── database.py        SQLite 连接
+│   ├── database.py        PostgreSQL 连接 (asyncpg)
 │   ├── routers/           API 路由
 │   ├── services/          业务逻辑
 │   ├── models/            Pydantic 数据模型
@@ -104,11 +104,12 @@ docker compose up -d
 
 ## 6. 数据库规范
 
-- 使用 SQLite WAL 模式
-- 数据库文件位于 `data/omnipub.db`
+- 使用 PostgreSQL 15（Docker 容器 `omnipub-db`，端口 5433）
+- 连接方式：asyncpg 异步连接池
 - 所有表必须有 `created_at` 和 `updated_at`
-- JSON 字段用 TEXT 类型存储
+- JSON 字段用 TEXT 类型存储（`json.dumps` / `json.loads`）
 - 索引命名：`idx_{表名}_{字段名}`
+- 迁移脚本位于 `backend/migrations/`
 
 ---
 

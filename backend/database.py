@@ -150,6 +150,21 @@ SCHEMA_SQL = [
     )
     """,
 
+    # 账号表（CMS 平台登录凭据，password_encrypted 字段实际存明文密码用于 CMS 自动登录）
+    """
+    CREATE TABLE IF NOT EXISTS accounts (
+        id                  SERIAL PRIMARY KEY,
+        platform_id         INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+        username            TEXT DEFAULT '',
+        password_encrypted  TEXT DEFAULT '',
+        login_status        TEXT DEFAULT 'unknown',
+        last_login_at       TIMESTAMP DEFAULT NULL,
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(platform_id)
+    )
+    """,
+
     # ── 索引（基础） ──
     "CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",

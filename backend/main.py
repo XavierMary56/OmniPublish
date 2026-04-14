@@ -3,6 +3,7 @@
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -55,11 +56,16 @@ async def lifespan(app: FastAPI):
 
 
 async def _daily_cleanup():
-    """每天凌晨 3 点清理过期日志和孤立上传文件。"""
+    """启动时立即执行一次清理，之后每 24 小时执行一次。"""
     from database import cleanup_old_logs, get_pool
+    first_run = True
     while True:
         try:
-            await asyncio.sleep(24 * 3600)  # 每 24 小时执行一次
+            if first_run:
+                await asyncio.sleep(60)  # 启动后等 1 分钟再首次清理（等数据库就绪）
+                first_run = False
+            else:
+                await asyncio.sleep(24 * 3600)  # 之后每 24 小时
             pool = await get_pool()
             async with pool.acquire() as conn:
                 deleted = await cleanup_old_logs(conn, days=30)
@@ -135,21 +141,23 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ── WebSocket 认证辅助 ──
 async def _ws_authenticate(websocket: WebSocket, token: str = None) -> bool:
-    """验证 WebSocket 连接的 token。缺少或无效 token 时仍允许连接（降级模式）。
+    """验证 WebSocket 连接的 JWT token。
+    无效/过期 token 拒绝连接并关闭 WebSocket。
     注意：不在这里 accept()，由 ws_manager.connect_* 负责 accept。"""
+    logger = logging.getLogger("omnipublish")
     if not token:
-        # 无 token：记录警告，仍允许连接（前端初始化时可能还没有 token）
-        import logging
-        logging.getLogger("omnipublish").warning("WebSocket 连接无认证 token")
-        return True
+        logger.warning("WebSocket 连接被拒绝：缺少认证 token")
+        await websocket.accept()
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return False
     try:
         decode_token(token)
         return True
     except Exception:
-        # token 无效：记录警告但仍允许连接（避免阻断前端功能）
-        import logging
-        logging.getLogger("omnipublish").warning("WebSocket 连接 token 无效")
-        return True
+        logger.warning("WebSocket 连接被拒绝：token 无效或已过期")
+        await websocket.accept()
+        await websocket.close(code=4003, reason="Invalid or expired token")
+        return False
 
 
 # ── WebSocket 端点 ──

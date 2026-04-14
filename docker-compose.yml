@@ -36,6 +36,7 @@ services:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://omnipub:omnipub2026@db:5432/omnipub
+      - OMNIPUB_AUTH_SECRET=omnipub-jwt-secret-x7k9m2p4v8w1
     depends_on:
       db:
         condition: service_healthy
