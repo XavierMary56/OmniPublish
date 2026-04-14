@@ -174,7 +174,11 @@ function replaceWatermark(type: 'img' | 'vid') {
 // 编辑时预览已有水印
 function initWmPreviews() {
   if (form.value.img_wm_file) {
-    imgWmPreview.value = '/uploads/watermarks/' + form.value.img_wm_file.split('/').pop()
+    // 路径: /app/backend/uploads/watermarks/haijiao/1744638123_logo.png
+    const wmIdx = form.value.img_wm_file.indexOf('watermarks/')
+    imgWmPreview.value = wmIdx >= 0
+      ? '/uploads/' + form.value.img_wm_file.substring(wmIdx)
+      : '/uploads/watermarks/' + form.value.img_wm_file.split('/').pop()
   } else {
     imgWmPreview.value = ''
   }
@@ -230,7 +234,7 @@ onMounted(load)
         <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px">
           <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--t3)">图片水印</span>
             <span v-if="p.img_wm_file" style="display:flex;align-items:center;gap:4px">
-              <img :src="'/uploads/watermarks/' + p.img_wm_file.split('/').pop()" style="height:18px;width:auto;border-radius:2px;background:#333" @error="($event.target as HTMLImageElement).style.display='none'" />
+              <img :src="p.img_wm_file.indexOf('watermarks/') >= 0 ? '/uploads/' + p.img_wm_file.substring(p.img_wm_file.indexOf('watermarks/')) : '/uploads/watermarks/' + p.img_wm_file.split('/').pop()" style="height:18px;width:auto;border-radius:2px;background:#333" @error="($event.target as HTMLImageElement).style.display='none'" />
               <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.img_wm_file.split('/').pop() }}</span>
             </span>
             <span v-else style="color:var(--t3)">未配置</span>

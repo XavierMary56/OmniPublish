@@ -242,14 +242,6 @@ async def upload_watermark(
     if ext not in allowed:
         raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}，允许: {', '.join(allowed)}")
 
-    # 用平台拼音生成文件名
-    if platform_name:
-        base_name = _to_pinyin_filename(platform_name)
-        suffix = "_logo" if type == "img" else "_wm"
-        safe_name = f"{base_name}{suffix}{ext}"
-    else:
-        safe_name = os.path.basename(file.filename)
-
     # 读取文件内容
     content = await file.read()
 
@@ -260,27 +252,32 @@ async def upload_watermark(
             from PIL import Image
             import io
             img = Image.open(io.BytesIO(content))
-            # 转为 RGBA（添加 Alpha 透明通道）
             img = img.convert("RGBA")
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             content = buf.getvalue()
-            safe_name = os.path.splitext(safe_name)[0] + ".png"
             ext = ".png"
             converted = True
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"JPG 转 PNG 失败: {e}")
 
-    dest = WM_DIR / safe_name
+    # 按平台拼音建子目录，文件名用时间戳
+    import time as _time
+    timestamp = int(_time.time())
+    if platform_name:
+        dir_name = _to_pinyin_filename(platform_name)
+        suffix = "_logo" if type == "img" else "_wm"
+        safe_name = f"{timestamp}{suffix}{ext}"
+    else:
+        dir_name = "default"
+        safe_name = f"{timestamp}_{os.path.splitext(os.path.basename(file.filename))[0]}{ext}"
+
+    sub_dir = WM_DIR / dir_name
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    dest = sub_dir / safe_name
 
     # 如果同名文件已存在，加序号
-    counter = 1
-    while dest.exists():
-        name_only = os.path.splitext(safe_name)[0]
-        dest = WM_DIR / f"{name_only}_{counter}{ext}"
-        counter += 1
-
-    # 写入文件
+    # 写入文件（时间戳命名基本不会重名）
     with open(dest, "wb") as fp:
         fp.write(content)
 
@@ -291,15 +288,16 @@ async def upload_watermark(
     result = {
         "path": str(dest),
         "rel_path": rel_path,
+        "dir_name": dir_name,
         "filename": dest.name,
         "size": file_size,
         "size_kb": round(file_size / 1024, 1),
         "converted": converted,
     }
 
-    # 图片水印返回预览 URL
+    # 图片水印返回预览 URL（含子目录）
     if type == "img":
-        result["preview_url"] = f"/uploads/watermarks/{dest.name}"
+        result["preview_url"] = f"/uploads/watermarks/{dir_name}/{dest.name}"
         if converted:
             result["convert_note"] = "已从 JPG 自动转换为 PNG（添加透明通道）"
 
