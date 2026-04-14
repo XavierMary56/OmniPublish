@@ -31,12 +31,13 @@ from publish_api import RemotePublishClient, parse_txt_file, build_markdown
 class PublishService:
     """上传发布服务。"""
 
-    # 缓存各平台的 API client（复用登录态）
-    _clients: dict = {}
-
     # 切片轮询配置
     SLICE_POLL_INTERVAL = 10  # 秒
     SLICE_MAX_WAIT = 600      # 最多等 10 分钟
+
+    def __init__(self):
+        # 缓存各平台的 API client（复用登录态） — 实例级别而非类级别
+        self._clients: dict = {}
 
     def _get_client(self, platform: dict) -> RemotePublishClient:
         """获取或创建平台 API client。"""

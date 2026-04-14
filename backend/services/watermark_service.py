@@ -151,7 +151,6 @@ class WatermarkService:
                 task_id, f"水印处理完成: {success_count} 个平台全部成功", step=4
             )
         elif success_count > 0:
-            await pipeline_service.update_step_status(task_id, step=4, status="done")
             await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
             await pipeline_service.add_log(
                 task_id, f"水印处理部分完成: {success_count} 成功, {fail_count} 失败", step=4, level="warn"

@@ -21,6 +21,12 @@ class RenameService:
                       digits: int = 2, separator: str = "_") -> list:
         """预览重命名结果（dry-run）。"""
         import os
+        # 路径安全校验
+        real = os.path.realpath(folder_path)
+        if not os.path.isdir(real):
+            raise ValueError(f"目录不存在: {folder_path}")
+        if ".." in folder_path:
+            raise ValueError("路径不允许包含 '..'")
         files = sorted([
             f for f in os.listdir(folder_path)
             if os.path.splitext(f)[1].lower() in IMG_EXTS
@@ -40,6 +46,12 @@ class RenameService:
     async def execute(self, task_id: int, folder_path: str, prefix: str,
                       start: int = 1, digits: int = 2, separator: str = "_") -> list:
         """执行重命名并更新任务状态。"""
+        import os
+        real = os.path.realpath(folder_path)
+        if not os.path.isdir(real):
+            raise ValueError(f"目录不存在: {folder_path}")
+        if ".." in folder_path:
+            raise ValueError("路径不允许包含 '..'")
         await pipeline_service.update_step_status(task_id, step=2, status="running")
         await pipeline_service.add_log(task_id, f"开始重命名: 前缀={prefix}", step=2)
 

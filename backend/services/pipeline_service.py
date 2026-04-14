@@ -134,6 +134,15 @@ class PipelineService:
         """更新平台子任务状态。"""
         if not kwargs:
             return
+        # 安全校验：只允许已知列名，防止 SQL 注入
+        ALLOWED_COLUMNS = {
+            "publish_status", "publish_error", "publish_result",
+            "upload_progress", "transcode_status",
+            "wm_status", "wm_progress", "wm_error", "wm_images_dir",
+        }
+        for k in kwargs:
+            if k not in ALLOWED_COLUMNS:
+                raise ValueError(f"不允许更新列: {k}")
         pool = await get_pool()
         async with pool.acquire() as conn:
             set_parts = []
@@ -219,6 +228,8 @@ class PipelineService:
 
     def _initial_status_for_step(self, step: int) -> str:
         """每步的初始状态。"""
+        if step == 0:
+            return "done"
         if step in (1, 2, 3, 4):
             return "awaiting_confirm"
         return "running"

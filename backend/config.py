@@ -111,7 +111,7 @@ def load_config() -> AppConfig:
         server=ServerConfig(
             port=int(os.environ.get("OMNIPUB_PORT", server_raw.get("port", 9527))),
             auth_secret=os.environ.get("OMNIPUB_AUTH_SECRET", server_raw.get("auth_token", "change-me-in-production")),
-            allowed_origins=server_raw.get("allowed_origins", ["*"]),
+            allowed_origins=os.environ.get("OMNIPUB_CORS_ORIGINS", "").split(",") if os.environ.get("OMNIPUB_CORS_ORIGINS") else server_raw.get("allowed_origins", ["*"]),
             token_expire_hours=server_raw.get("token_expire_hours", 24),
         ),
         yolo=YoloConfig(**{k: v for k, v in yolo_raw.items() if k in YoloConfig.__dataclass_fields__}),

@@ -167,8 +167,8 @@ def _user_filter(user: UserInfo) -> tuple:
     if user.role == UserRole.EDITOR:
         return "AND created_by = $1", [user.id]
     elif user.role == UserRole.LEADER:
-        # 组长看本组（通过 dept 前缀匹配，与 tasks.py 保持一致）
-        return "AND created_by IN (SELECT id FROM users WHERE dept LIKE $1)", [f"{user.dept[:2]}%"]
+        # 组长看本组（通过 dept 前缀匹配）
+        return "AND created_by IN (SELECT id FROM users WHERE dept LIKE $1)", [f"{user.dept}%"]
     return "", []  # 管理员看全部
 
 

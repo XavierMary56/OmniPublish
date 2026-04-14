@@ -138,13 +138,17 @@ async def _ws_authenticate(websocket: WebSocket, token: str = None) -> bool:
     """验证 WebSocket 连接的 token。缺少或无效 token 时仍允许连接（降级模式）。
     注意：不在这里 accept()，由 ws_manager.connect_* 负责 accept。"""
     if not token:
-        # 无 token 也允许连接（前端初始化时可能还没有 token）
+        # 无 token：记录警告，仍允许连接（前端初始化时可能还没有 token）
+        import logging
+        logging.getLogger("omnipublish").warning("WebSocket 连接无认证 token")
         return True
     try:
         decode_token(token)
         return True
     except Exception:
-        # token 无效也允许连接（避免阻断前端功能）
+        # token 无效：记录警告但仍允许连接（避免阻断前端功能）
+        import logging
+        logging.getLogger("omnipublish").warning("WebSocket 连接 token 无效")
         return True
 
 

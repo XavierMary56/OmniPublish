@@ -15,6 +15,18 @@ if str(SCRIPTS_DIR) not in sys.path:
 from make_cover import make_cover, LAYOUT_CONFIG
 
 
+def _validate_folder_path(path: str):
+    """校验文件夹路径，防止路径穿越攻击。"""
+    import os
+    real = os.path.realpath(path)
+    # 必须是已存在的目录
+    if not os.path.isdir(real):
+        raise ValueError(f"目录不存在: {path}")
+    # 禁止包含 .. 的路径穿越
+    if ".." in path:
+        raise ValueError("路径不允许包含 '..'")
+
+
 class CoverService:
     """封面制作服务。"""
 
@@ -29,6 +41,9 @@ class CoverService:
                                    layout: str = "triple", candidates: int = 3,
                                    head_margin: float = 0.15, size: str = "") -> list:
         """生成候选封面。"""
+        # 路径安全校验
+        from config import UPLOADS_DIR
+        _validate_folder_path(folder_path)
         await pipeline_service.update_step_status(task_id, step=3, status="running")
         await pipeline_service.add_log(
             task_id, f"开始生成封面候选: layout={layout}, candidates={candidates}, size={size or '默认'}", step=3
