@@ -946,7 +946,7 @@ function handleDiscardDraft() {
         <!-- Step 5: 水印 -->
         <div v-if="store.currentStep === 4">
           <h4 style="margin-bottom:12px;font-size:14px">水印处理 <span style="font-size:12px;color:var(--t2);font-weight:400">— 根据已选平台自动匹配水印配置</span></h4>
-          <div v-if="Object.keys(store.wmProgress).length === 0">
+          <div v-if="!Object.values(store.wmProgress).some(p => ['running','done','failed'].includes(p.status))">
             <p style="font-size:12px;color:var(--t2);margin-bottom:14px">以下是各目标平台的水印方案，确认后系统将自动为图片和视频添加对应水印。</p>
 
             <!-- 水印方案预览卡片 -->
