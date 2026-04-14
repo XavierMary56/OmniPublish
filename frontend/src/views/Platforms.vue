@@ -132,7 +132,7 @@ async function uploadWatermark(e: Event, type: 'img' | 'vid') {
 function replaceWatermark(type: 'img' | 'vid') {
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = type === 'img' ? 'image/png,.png' : '.mov,.png,image/png,video/quicktime'
+  input.accept = type === 'img' ? 'image/png,image/jpeg,.png,.jpg,.jpeg' : '.mov,.png,image/png,video/quicktime'
   input.onchange = (e) => uploadWatermark(e, type)
   input.click()
 }
@@ -289,7 +289,7 @@ onMounted(load)
                   <span style="font-size:12px;color:var(--primary)">点击上传图片水印</span>
                 </template>
               </div>
-              <div style="font-size:10px;color:var(--t3);margin-top:2px">PNG 透明底，建议宽度 200~400px</div>
+              <div style="font-size:10px;color:var(--t3);margin-top:2px">支持 PNG/JPG，JPG 会自动转 PNG 透明底，建议宽度 200~400px</div>
             </div>
             <div class="form-group" style="flex:1"><label>水印位置</label>
               <select v-model="form.img_wm_position" class="form-select">

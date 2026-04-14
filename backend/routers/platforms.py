@@ -209,12 +209,34 @@ async def upload_watermark(
         raise HTTPException(status_code=400, detail="文件名为空")
 
     ext = os.path.splitext(file.filename)[1].lower()
-    allowed = {".png"} if type == "img" else {".png", ".mov"}
+    allowed = {".png", ".jpg", ".jpeg"} if type == "img" else {".png", ".mov"}
     if ext not in allowed:
         raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}，允许: {', '.join(allowed)}")
 
     # 安全文件名
     safe_name = os.path.basename(file.filename)
+
+    # 读取文件内容
+    content = await file.read()
+
+    # 图片水印：JPG/JPEG 自动转 PNG（水印需要透明通道）
+    converted = False
+    if type == "img" and ext in (".jpg", ".jpeg"):
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(content))
+            # 转为 RGBA（添加 Alpha 透明通道）
+            img = img.convert("RGBA")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            content = buf.getvalue()
+            safe_name = os.path.splitext(safe_name)[0] + ".png"
+            ext = ".png"
+            converted = True
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JPG 转 PNG 失败: {e}")
+
     dest = WM_DIR / safe_name
 
     # 如果同名文件已存在，加序号
@@ -225,7 +247,6 @@ async def upload_watermark(
         counter += 1
 
     # 写入文件
-    content = await file.read()
     with open(dest, "wb") as fp:
         fp.write(content)
 
@@ -239,11 +260,14 @@ async def upload_watermark(
         "filename": dest.name,
         "size": file_size,
         "size_kb": round(file_size / 1024, 1),
+        "converted": converted,
     }
 
     # 图片水印返回预览 URL
-    if type == "img" and ext == ".png":
+    if type == "img":
         result["preview_url"] = f"/uploads/watermarks/{dest.name}"
+        if converted:
+            result["convert_note"] = "已从 JPG 自动转换为 PNG（添加透明通道）"
 
         # 尝试获取图片尺寸
         try:
