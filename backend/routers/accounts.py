@@ -1,6 +1,9 @@
-"""OmniPublish V2.0 — 账号管理路由"""
+"""OmniPublish V2.0 — 账号管理路由
 
-import json
+账号管理只管登录凭据（用户名、密码、Session 状态）。
+API 地址从 platforms 表 JOIN 获取，不重复存储。
+"""
+
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
@@ -15,28 +18,46 @@ router = APIRouter(prefix="/api/accounts", tags=["账号管理"])
 
 class AccountCreate(BaseModel):
     platform_id: int
-    platform_name: str = ""
-    api_url: str = ""
     username: str = ""
     password: str = ""
 
 
 class AccountUpdate(BaseModel):
-    api_url: Optional[str] = None
     username: Optional[str] = None
     password: Optional[str] = None
 
 
+def _mask_username(uname: str) -> str:
+    if len(uname) > 4:
+        return uname[:3] + "***" + uname[-2:]
+    return uname[:1] + "***" if uname else ""
+
+
+def _mask_url(url: str) -> str:
+    if not url:
+        return ""
+    parts = url.split("//", 1)
+    if len(parts) < 2:
+        return url
+    domain = parts[1].split("/")[0]
+    domain_parts = domain.split(".")
+    if len(domain_parts) >= 2:
+        masked = domain_parts[0][:3] + "*****." + ".".join(domain_parts[-2:])
+        path = "/".join(parts[1].split("/")[1:])
+        return parts[0] + "//" + masked + ("/" + path if path else "")
+    return url
+
+
 @router.get("")
 async def list_accounts(user: UserInfo = Depends(get_current_user)):
-    """获取所有平台账号列表。"""
+    """获取所有平台账号列表。API 地址从 platforms 表 JOIN 获取。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT a.id, a.platform_id, a.platform_name, a.api_url,
+            SELECT a.id, a.platform_id,
                    a.username, a.login_status, a.last_login_at, a.last_error,
                    a.created_at, a.updated_at,
-                   p.name as p_name, p.dept
+                   p.name as platform_name, p.dept, p.api_base_url
             FROM accounts a
             LEFT JOIN platforms p ON a.platform_id = p.id
             ORDER BY a.id
@@ -44,61 +65,43 @@ async def list_accounts(user: UserInfo = Depends(get_current_user)):
         result = []
         for r in rows:
             d = dict(r)
-            # 脱敏用户名
-            uname = d.get("username", "")
-            if len(uname) > 4:
-                d["username_masked"] = uname[:3] + "***" + uname[-2:]
-            else:
-                d["username_masked"] = uname[:1] + "***" if uname else ""
-            # 脱敏 URL
-            url = d.get("api_url", "")
-            if url:
-                parts = url.split("//", 1)
-                if len(parts) == 2:
-                    domain = parts[1].split("/")[0]
-                    domain_parts = domain.split(".")
-                    if len(domain_parts) >= 2:
-                        masked_domain = domain_parts[0][:3] + "*****." + ".".join(domain_parts[-2:])
-                        d["api_url_masked"] = parts[0] + "//" + masked_domain + "/" + "/".join(parts[1].split("/")[1:])
-                    else:
-                        d["api_url_masked"] = url
-                else:
-                    d["api_url_masked"] = url
-            # 格式化时间
+            d["username_masked"] = _mask_username(d.get("username", ""))
+            d["api_url"] = d.get("api_base_url", "")
+            d["api_url_masked"] = _mask_url(d["api_url"])
             if d.get("last_login_at"):
                 d["last_login_at"] = d["last_login_at"].strftime("%Y-%m-%d %H:%M")
-            d["platform_name"] = d.get("p_name") or d.get("platform_name", "")
+            if d.get("created_at"):
+                d["created_at"] = d["created_at"].strftime("%Y-%m-%d %H:%M")
             result.append(d)
         return ApiResponse.success(data=result)
 
 
 @router.post("")
 async def create_account(req: AccountCreate, user: UserInfo = Depends(get_current_user)):
-    """添加平台账号。"""
+    """添加平台账号。只存登录凭据，API 地址在业务线管理中配置。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # 检查是否已存在
         existing = await conn.fetchrow(
             "SELECT id FROM accounts WHERE platform_id = $1", req.platform_id
         )
         if existing:
             raise HTTPException(status_code=400, detail="该平台账号已存在，请编辑")
 
-        # 获取平台名称
-        platform = await conn.fetchrow("SELECT name FROM platforms WHERE id = $1", req.platform_id)
-        p_name = platform["name"] if platform else req.platform_name
+        platform = await conn.fetchrow("SELECT id FROM platforms WHERE id = $1", req.platform_id)
+        if not platform:
+            raise HTTPException(status_code=400, detail="平台不存在")
 
         await conn.execute("""
-            INSERT INTO accounts (platform_id, platform_name, api_url, username, password_encrypted, login_status)
-            VALUES ($1, $2, $3, $4, $5, 'inactive')
-        """, req.platform_id, p_name, req.api_url, req.username, req.password)
+            INSERT INTO accounts (platform_id, username, password_encrypted, login_status)
+            VALUES ($1, $2, $3, 'inactive')
+        """, req.platform_id, req.username, req.password)
 
         return ApiResponse.success(message="账号已添加")
 
 
 @router.put("/{account_id}")
 async def update_account(account_id: int, req: AccountUpdate, user: UserInfo = Depends(get_current_user)):
-    """更新平台账号。"""
+    """更新平台账号凭据。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
         existing = await conn.fetchrow("SELECT id FROM accounts WHERE id = $1", account_id)
@@ -108,10 +111,6 @@ async def update_account(account_id: int, req: AccountUpdate, user: UserInfo = D
         updates = []
         params = []
         idx = 0
-        if req.api_url is not None:
-            idx += 1
-            updates.append(f"api_url = ${idx}")
-            params.append(req.api_url)
         if req.username is not None:
             idx += 1
             updates.append(f"username = ${idx}")
@@ -146,14 +145,13 @@ async def delete_account(account_id: int, user: UserInfo = Depends(get_current_u
 
 @router.post("/{account_id}/login")
 async def test_login(account_id: int, user: UserInfo = Depends(get_current_user)):
-    """测试账号登录状态。"""
+    """测试账号登录（模拟）。实际需对接各平台 CMS API。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM accounts WHERE id = $1", account_id)
         if not row:
             raise HTTPException(status_code=404, detail="账号不存在")
 
-        # 简单模拟登录测试（实际需要调用各平台 API）
         now = datetime.now()
         await conn.execute(
             "UPDATE accounts SET login_status = 'active', last_login_at = $1, last_error = '', updated_at = $1 WHERE id = $2",

@@ -12,7 +12,7 @@ const accounts = ref<Account[]>([])
 const platforms = ref<any[]>([])
 const showModal = ref(false)
 const editId = ref<number | null>(null)
-const form = ref({ platform_id: 0, api_url: '', username: '', password: '' })
+const form = ref({ platform_id: 0, username: '', password: '' })
 const showPassword = ref(false)
 const isLogging = ref<number | null>(null)
 
@@ -29,14 +29,14 @@ const unboundPlatforms = computed(() => {
 
 function openAdd() {
   editId.value = null
-  form.value = { platform_id: 0, api_url: '', username: '', password: '' }
+  form.value = { platform_id: 0, username: '', password: '' }
   showPassword.value = false
   showModal.value = true
 }
 
 function openEdit(a: Account) {
   editId.value = a.id
-  form.value = { platform_id: a.platform_id, api_url: a.api_url, username: a.username, password: '' }
+  form.value = { platform_id: a.platform_id, username: a.username, password: '' }
   showPassword.value = false
   showModal.value = true
 }
@@ -45,7 +45,6 @@ async function save() {
   try {
     if (editId.value) {
       const data: any = {}
-      if (form.value.api_url) data.api_url = form.value.api_url
       if (form.value.username) data.username = form.value.username
       if (form.value.password) data.password = form.value.password
       await api('PUT', `/accounts/${editId.value}`, data)
@@ -154,9 +153,12 @@ onMounted(load)
           <div v-if="!unboundPlatforms.length" style="font-size:11px;color:var(--orange);margin-top:4px">所有平台已绑定账号</div>
         </div>
 
-        <div class="form-group" style="margin-bottom:14px">
-          <label>API 入口 URL</label>
-          <input v-model="form.api_url" class="form-input" placeholder="https://xxx.xxx/api.php" />
+        <!-- API 地址（只读，来自业务线配置） -->
+        <div v-if="!editId && form.platform_id" class="form-group" style="margin-bottom:14px">
+          <label>API 入口 URL <span style="font-size:10px;color:var(--t3)">(来自业务线配置，如需修改请到「业务线管理」)</span></label>
+          <div style="padding:8px 11px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;font-size:12px;color:var(--t3)">
+            {{ platforms.find(p => p.id === form.platform_id)?.api_base_url || '未配置' }}
+          </div>
         </div>
 
         <div class="form-group" style="margin-bottom:14px">
