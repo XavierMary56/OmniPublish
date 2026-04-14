@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from services.pipeline_service import pipeline_service
+from websocket.manager import ws_manager
 from database import get_pool
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -95,7 +96,7 @@ class WatermarkService:
                     )
             # 通过 WebSocket 通知前端
             for p in skipped:
-                await pipeline_service.ws_manager.send_to_task(task_id, {
+                await ws_manager.send_to_task(task_id, {
                     "type": "platform_update",
                     "platform_id": p["platform_id"],
                     "wm_status": "skipped",
@@ -109,7 +110,7 @@ class WatermarkService:
             )
             await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
             # 通知前端步骤变化
-            await pipeline_service.ws_manager.send_to_task(task_id, {
+            await ws_manager.send_to_task(task_id, {
                 "type": "step_changed",
                 "step": 4,
                 "status": "done",
