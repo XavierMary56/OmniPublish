@@ -33,7 +33,9 @@ async function retryPlatform(platformId: number) {
   try {
     await api('POST', `/pipeline/${store.taskId}/step/6/retry`, { platform_id: platformId })
   } catch (e: any) {
-    alert(e.response?.data?.detail || '重试失败')
+    const detail = e.response?.data?.detail
+    const msg = typeof detail === 'string' ? detail : JSON.stringify(detail) || '重试失败'
+    alert(msg)
   }
 }
 
@@ -441,7 +443,8 @@ async function handlePublish() {
   try {
     await store.publish()
   } catch (e: any) {
-    alert(e.response?.data?.detail || e.message || '发布失败')
+    const detail = e.response?.data?.detail
+    alert(typeof detail === 'string' ? detail : JSON.stringify(detail) || e.message || '发布失败')
   } finally {
     isSubmitting.value = false
   }

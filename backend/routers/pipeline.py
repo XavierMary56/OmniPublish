@@ -761,12 +761,15 @@ async def publish(task_id: int, req: PublishRequest, bg: BackgroundTasks,
     return ApiResponse.success(message="发布任务已启动")
 
 
+class RetryPublishRequest(BaseModel):
+    platform_id: int
+
 @router.post("/{task_id}/step/6/retry")
-async def retry_publish(task_id: int, platform_id: int, bg: BackgroundTasks,
+async def retry_publish(task_id: int, req: RetryPublishRequest, bg: BackgroundTasks,
                         user: UserInfo = Depends(get_current_user)):
     """重试失败的平台。"""
-    bg.add_task(publish_service.retry_platform, task_id, platform_id)
-    return ApiResponse.success(message=f"平台 {platform_id} 重试已启动")
+    bg.add_task(publish_service.retry_platform, task_id, req.platform_id)
+    return ApiResponse.success(message=f"平台 {req.platform_id} 重试已启动")
 
 
 @router.put("/{task_id}/cancel")
