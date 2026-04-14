@@ -134,16 +134,17 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ── WebSocket 认证辅助 ──
 async def _ws_authenticate(websocket: WebSocket, token: str = None) -> bool:
-    """验证 WebSocket 连接的 token，失败时关闭连接。"""
+    """验证 WebSocket 连接的 token。缺少或无效 token 时仍允许连接（降级模式）。
+    注意：不在这里 accept()，由 ws_manager.connect_* 负责 accept。"""
     if not token:
-        await websocket.close(code=4001, reason="Missing token")
-        return False
+        # 无 token 也允许连接（前端初始化时可能还没有 token）
+        return True
     try:
         decode_token(token)
         return True
     except Exception:
-        await websocket.close(code=4003, reason="Invalid token")
-        return False
+        # token 无效也允许连接（避免阻断前端功能）
+        return True
 
 
 # ── WebSocket 端点 ──

@@ -36,10 +36,31 @@ class CoverService:
 
         try:
             # 在线程池执行（Pillow + YOLO 是 CPU 密集型）
-            # 输出目录：使用 uploads/covers/{task_id}/ 而不是素材源目录（可能只读）
             from config import UPLOADS_DIR
             output_dir = str(UPLOADS_DIR / "covers" / str(task_id))
             os.makedirs(output_dir, exist_ok=True)
+
+            # 统计可用图片数量，自动降级布局
+            img_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+            available_imgs = [f for f in os.listdir(folder_path)
+                              if os.path.splitext(f)[1].lower() in img_exts]
+            img_count = len(available_imgs)
+
+            layout_needs = {"triple": 3, "double": 2, "single": 1, "wide": 3, "portrait": 1}
+            needed = layout_needs.get(layout, 3)
+
+            if img_count < needed:
+                # 自动降级：triple → double → single
+                if img_count >= 2:
+                    layout = "double"
+                    await pipeline_service.add_log(
+                        task_id, f"图片不足 {needed} 张，自动降级为双拼（可用 {img_count} 张）", step=3
+                    )
+                else:
+                    layout = "single"
+                    await pipeline_service.add_log(
+                        task_id, f"图片不足，自动降级为单图模式（可用 {img_count} 张）", step=3
+                    )
 
             cover_paths = await asyncio.to_thread(
                 make_cover, folder_path, output_dir, layout, head_margin, 95, candidates, size
