@@ -146,14 +146,21 @@ class WatermarkService:
         fail_count = sum(1 for r in results if isinstance(r, Exception))
 
         if fail_count == 0:
-            await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
+            # 水印完成后不自动推进，停留在 awaiting_confirm 让用户确认结果
+            await pipeline_service.update_step_status(
+                task_id, step=4, status="awaiting_confirm",
+                data={"success_count": success_count},
+            )
             await pipeline_service.add_log(
-                task_id, f"水印处理完成: {success_count} 个平台全部成功", step=4
+                task_id, f"水印处理完成: {success_count} 个平台全部成功，等待确认", step=4
             )
         elif success_count > 0:
-            await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
+            await pipeline_service.update_step_status(
+                task_id, step=4, status="awaiting_confirm",
+                data={"success_count": success_count, "fail_count": fail_count},
+            )
             await pipeline_service.add_log(
-                task_id, f"水印处理部分完成: {success_count} 成功, {fail_count} 失败", step=4, level="warn"
+                task_id, f"水印处理部分完成: {success_count} 成功, {fail_count} 失败，等待确认", step=4, level="warn"
             )
         else:
             await pipeline_service.update_step_status(
@@ -185,10 +192,25 @@ class WatermarkService:
                     wm_status="done", wm_progress=100,
                     wm_images_dir=folder_path,  # 使用原图
                 )
+                await ws_manager.send_to_task(task_id, {
+                    "type": "platform_update",
+                    "platform_id": platform_id,
+                    "platform_name": platform_name,
+                    "wm_status": "done", "wm_progress": 100,
+                    "wm_images_count": 0, "wm_videos_count": 0,
+                })
                 await pipeline_service.add_log(
                     task_id, f"{platform_name}: 无水印文件，跳过", step=4, platform_id=platform_id
                 )
                 return
+
+            # 通知前端：开始处理
+            await ws_manager.send_to_task(task_id, {
+                "type": "platform_update",
+                "platform_id": platform_id,
+                "platform_name": platform_name,
+                "wm_status": "running", "wm_progress": 10,
+            })
 
             # 图片水印
             await asyncio.to_thread(
@@ -204,13 +226,25 @@ class WatermarkService:
                 opacity=platform.get("img_wm_opacity", 100),
             )
 
+            # 统计处理的文件数
+            img_exts = {".jpg", ".jpeg", ".png", ".webp"}
+            img_count = len([f for f in os.listdir(output_dir)
+                             if os.path.splitext(f)[1].lower() in img_exts]) if os.path.isdir(output_dir) else 0
+
             await pipeline_service.update_platform_task(
                 task_id, platform_id,
                 wm_status="done", wm_progress=100,
                 wm_images_dir=output_dir,
             )
+            await ws_manager.send_to_task(task_id, {
+                "type": "platform_update",
+                "platform_id": platform_id,
+                "platform_name": platform_name,
+                "wm_status": "done", "wm_progress": 100,
+                "wm_images_count": img_count, "wm_videos_count": 0,
+            })
             await pipeline_service.add_log(
-                task_id, f"{platform_name}: 水印处理完成", step=4, platform_id=platform_id
+                task_id, f"{platform_name}: 水印处理完成 ({img_count} 张图片)", step=4, platform_id=platform_id
             )
 
         except Exception as e:

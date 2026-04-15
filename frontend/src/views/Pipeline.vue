@@ -19,6 +19,30 @@ const localPathInput = ref('')
 const wmPlan = ref<any[]>([])
 const wmSkipped = ref<any[]>([])
 
+// 水印状态中文映射
+function wmStatusLabel(status: string): string {
+  const map: Record<string, string> = { pending: '等待中', running: '处理中', done: '✅ 完成', failed: '失败', skipped: '已跳过' }
+  return map[status] || status
+}
+function wmModeLabel(mode: string): string {
+  const map: Record<string, string> = { 'corner-cycle': '四角轮转', 'fixed': '固定位置', 'dual-diagonal': '双水印对角' }
+  return map[mode] || mode || '—'
+}
+
+// 水印是否全部完成
+const wmAllDone = computed(() => {
+  const entries = Object.values(store.wmProgress)
+  return entries.length > 0 && entries.every(p => p.status === 'done' || p.status === 'skipped')
+})
+
+// 水印完成文字（如 "图片 ×6 水印已添加"）
+function wmDoneText(info: { images_count?: number; videos_count?: number }): string {
+  const parts: string[] = []
+  if (info.images_count) parts.push(`图片 ×${info.images_count}`)
+  if (info.videos_count) parts.push(`视频 ×${info.videos_count}`)
+  return parts.length > 0 ? `${parts.join(' + ')} 水印已添加` : '水印处理完成'
+}
+
 // 平台 ID → 名称映射（从平台列表构建）
 const platformNameMap = computed(() => {
   const map: Record<number, string> = {}
@@ -417,21 +441,35 @@ async function handleConfirmWatermark() {
   isSubmitting.value = true
   try {
     await store.confirmWatermark()
-    // 轮询等待水印处理完成或跳过
+    // 轮询等待水印处理完成（WebSocket 会推送进度，这里做超时保护）
     const pollWm = setInterval(async () => {
       if (!store.taskId) { clearInterval(pollWm); return }
       try {
         await store.loadTask(store.taskId)
-        // 如果已经推进到下一步（Step 5 = 发布），停止轮询
-        if (store.currentStep >= 5) {
+        // 水印全部完成或进入下一步时停止轮询
+        const allWmDone = Object.values(store.wmProgress).length > 0 &&
+          Object.values(store.wmProgress).every(p => p.status === 'done' || p.status === 'skipped' || p.status === 'failed')
+        if (allWmDone || store.currentStep >= 5) {
           clearInterval(pollWm)
         }
       } catch {}
     }, 3000)
-    // 60秒后无论如何停止轮询
-    setTimeout(() => clearInterval(pollWm), 60000)
+    // 120秒后无论如何停止轮询（视频水印可能较慢）
+    setTimeout(() => clearInterval(pollWm), 120000)
   } catch (e: any) {
     alert(e.response?.data?.detail || e.message || '确认水印失败')
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handleWmDone() {
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  try {
+    await store.confirmWatermarkDone()
+  } catch (e: any) {
+    alert(e.response?.data?.detail || e.message || '确认失败')
   } finally {
     isSubmitting.value = false
   }
@@ -949,20 +987,23 @@ function handleDiscardDraft() {
         <!-- Step 5: 水印 -->
         <div v-if="store.currentStep === 4">
           <h4 style="margin-bottom:12px;font-size:14px">水印处理 <span style="font-size:12px;color:var(--t2);font-weight:400">— 根据已选平台自动匹配水印配置</span></h4>
+          <!-- 确认前：展示水印方案 -->
           <div v-if="!Object.values(store.wmProgress).some(p => ['running','done','failed'].includes(p.status))">
             <p style="font-size:12px;color:var(--t2);margin-bottom:14px">以下是各目标平台的水印方案，确认后系统将自动为图片和视频添加对应水印。</p>
 
             <!-- 水印方案预览卡片 -->
-            <div v-if="wmPlan.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:16px">
+            <div v-if="wmPlan.length" class="wm-preview-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px">
               <div v-for="p in wmPlan" :key="p.platform_id" style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                   <span style="font-size:13px;font-weight:600">{{ p.name }}</span>
-                  <span class="badge badge-primary" style="font-size:10px;padding:1px 6px">{{ p.has_video_wm ? '图片+视频' : '仅图片' }}</span>
+                  <span class="badge" :class="p.has_vid_wm ? 'badge-primary' : p.has_img_wm ? 'badge-green' : 'badge-plain'" style="font-size:10px;padding:1px 6px">
+                    {{ p.has_vid_wm && p.has_img_wm ? '图片+视频' : p.has_vid_wm ? '仅视频' : '仅图片' }}
+                  </span>
                 </div>
                 <div style="font-size:11px;color:var(--t2);line-height:1.8">
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>图片水印</span><span style="color:var(--t1)">{{ p.wm_image || '无' }}</span></div>
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印位置</span><span style="color:var(--t1)">{{ p.wm_position || '右下角' }}</span></div>
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印宽度</span><span style="color:var(--t1)">{{ p.wm_width || 264 }}px</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>图片水印</span><span style="color:var(--t1)">{{ p.wm_image ? `${p.wm_image} · ${p.wm_position || '右下角'}` : '无需' }}</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>视频水印</span><span style="color:var(--t1)">{{ p.wm_video ? `${p.wm_video} · ${wmModeLabel(p.vid_wm_mode)}` : '无需' }}</span></div>
+                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印缩放</span><span style="color:var(--t1)">{{ p.vid_wm_scale || p.wm_width || 264 }}{{ p.vid_wm_scale ? '%' : 'px' }}</span></div>
                 </div>
               </div>
             </div>
@@ -976,37 +1017,56 @@ function handleDiscardDraft() {
 
             <div style="padding:12px 16px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--t2);margin-bottom:14px">
               <template v-if="wmPlan.length">
-                💡 共 {{ wmPlan.length }} 个平台需要水印处理 · 预计耗时 ~{{ Math.max(1, wmPlan.length) }} 分钟
+                💡 共 {{ wmPlan.length }} 个平台 · 需生成 {{ wmPlan.length }} 套带水印图片{{ wmPlan.some(p => p.has_vid_wm) ? ` + ${wmPlan.filter(p => p.has_vid_wm).length} 套带水印视频` : '' }} · 预计耗时 ~{{ Math.max(1, wmPlan.length) }} 分钟
               </template>
               <template v-else>
                 💡 所有选中平台均未配置水印，点击下方按钮直接跳过进入发布
               </template>
             </div>
-            <button class="btn btn-green" @click="handleConfirmWatermark">
-              {{ wmPlan.length ? '✅ 确认水印方案，开始处理 →' : '⏭️ 跳过水印，直接发布 →' }}
-            </button>
-          </div>
-          <div v-else style="display:flex;flex-direction:column;gap:10px">
-            <div v-for="(info, pid) in store.wmProgress" :key="pid"
-                 style="background:var(--bg3);border-radius:8px;padding:14px"
-                 :style="{borderLeft: info.status==='done'?'3px solid var(--green)':info.status==='failed'?'3px solid var(--red)':info.status==='running'?'3px solid var(--primary)':'3px solid var(--bd)'}">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                <span style="font-weight:600">{{ info.name || `平台 ${pid}` }}</span>
-                <span class="badge" :class="info.status==='done'?'badge-green':info.status==='failed'?'badge-red':'badge-primary'" style="font-size:10px">{{ info.status }}</span>
-              </div>
-              <div class="progress-bar" style="height:6px"><div class="progress-fill" :style="{width:info.progress+'%',background:info.status==='done'?'var(--green)':info.status==='failed'?'var(--red)':'var(--primary)'}" /></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-green" @click="handleConfirmWatermark">
+                {{ wmPlan.length ? '✅ 确认水印方案，开始处理 →' : '⏭️ 跳过水印，直接发布 →' }}
+              </button>
             </div>
-            <!-- 水印全部完成后显示下一步按钮 -->
-            <div v-if="Object.values(store.wmProgress).every(p => p.status === 'done' || p.status === 'skipped')"
-                 style="margin-top:12px;padding:14px 16px;background:rgba(129,199,132,.06);border:1px solid rgba(129,199,132,.2);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
-              <span style="font-size:13px;color:var(--green)">✅ 水印处理全部完成</span>
-              <button class="btn btn-green" @click="store.currentStep = 5">进入上传 & 发布 →</button>
+          </div>
+          <!-- 确认后：处理进度 -->
+          <div v-else>
+            <!-- 顶部消息：根据完成状态切换 -->
+            <p v-if="wmAllDone" style="font-size:12px;color:var(--green);margin-bottom:14px">✅ 全部平台水印处理完成</p>
+            <p v-else style="font-size:12px;color:var(--t2);margin-bottom:14px">⏳ 正在为各平台添加水印，请等待处理完成…</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div v-for="(info, pid) in store.wmProgress" :key="pid"
+                   style="background:var(--bg3);border-radius:8px;padding:14px"
+                   :style="{border: info.status==='done'?'1px solid var(--green)':info.status==='failed'?'1px solid var(--red)':info.status==='running'?'1px solid var(--primary)':'1px solid var(--bd)'}">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                  <span style="font-weight:600">{{ info.name || `平台 ${pid}` }}</span>
+                  <span class="badge" style="font-size:10px"
+                        :class="info.status==='done'?'badge-green':info.status==='skipped'?'badge-green':info.status==='failed'?'badge-red':info.status==='running'?'badge-primary':'badge-plain'">
+                    {{ wmStatusLabel(info.status) }}
+                  </span>
+                </div>
+                <div class="progress-bar" style="height:6px"><div class="progress-fill" :style="{width:info.progress+'%',background:info.status==='done'||info.status==='skipped'?'var(--green)':info.status==='failed'?'var(--red)':'var(--primary)'}" /></div>
+                <div style="font-size:11px;margin-top:4px" :style="{color: info.status==='done'?'var(--green)':info.status==='failed'?'var(--red)':'var(--t3)'}">
+                  <template v-if="info.status==='done'">
+                    {{ wmDoneText(info) }}
+                  </template>
+                  <template v-else-if="info.status==='running'">正在添加水印…</template>
+                  <template v-else-if="info.status==='failed'">{{ info.error || '处理失败' }}</template>
+                  <template v-else-if="info.status==='skipped'">已跳过（未配置水印）</template>
+                  <template v-else>排队中…</template>
+                </div>
+              </div>
+            </div>
+            <!-- 水印全部完成 — 确认进入下一步 -->
+            <div v-if="wmAllDone"
+                 style="margin-top:14px;display:flex;gap:8px">
+              <button class="btn btn-green btn-lg" @click="handleWmDone">✅ 确认完成，进入上传 & 发布 →</button>
             </div>
             <!-- 部分失败时也允许继续 -->
             <div v-else-if="Object.values(store.wmProgress).some(p => p.status === 'failed') && !Object.values(store.wmProgress).some(p => p.status === 'running')"
                  style="margin-top:12px;padding:14px 16px;background:rgba(239,83,80,.06);border:1px solid rgba(239,83,80,.2);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:13px;color:var(--orange)">⚠️ 部分平台水印失败，可跳过继续发布</span>
-              <button class="btn btn-primary" @click="store.currentStep = 5">跳过失败，继续发布 →</button>
+              <button class="btn btn-primary" @click="handleWmDone">跳过失败，继续发布 →</button>
             </div>
           </div>
         </div>

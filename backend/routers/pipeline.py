@@ -733,6 +733,14 @@ async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_curr
         return ApiResponse.success(data=progress)
 
 
+@router.put("/{task_id}/step/5/done")
+async def confirm_watermark_done(task_id: int, user: UserInfo = Depends(get_current_user)):
+    """确认水印处理结果，推进到 Step 6。"""
+    await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
+    await pipeline_service.add_log(task_id, "水印处理已确认，进入上传 & 发布", step=4)
+    return ApiResponse.success(message="已进入上传 & 发布")
+
+
 # ══════════════════════════════════════════
 # Step 6: 上传 & 发布
 # ══════════════════════════════════════════

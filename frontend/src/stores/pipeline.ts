@@ -33,7 +33,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const selectedCover = ref(0)
 
   // Step 5
-  const wmProgress = ref<Record<number, { status: string; progress: number; name: string }>>({})
+  const wmProgress = ref<Record<number, { status: string; progress: number; name: string; images_count?: number; videos_count?: number; error?: string }>>({})
 
   // Step 6
   const publishStatus = ref<Record<number, { status: string; progress: number; error?: string }>>({})
@@ -406,7 +406,12 @@ export const usePipelineStore = defineStore('pipeline', () => {
 
     // 加载平台子任务状态
     for (const pt of (data.platform_tasks || [])) {
-      wmProgress.value[pt.platform_id] = { status: pt.wm_status, progress: pt.wm_progress, name: pt.platform_name }
+      const existing = wmProgress.value[pt.platform_id]
+      wmProgress.value[pt.platform_id] = {
+        status: pt.wm_status, progress: pt.wm_progress, name: pt.platform_name, error: pt.wm_error,
+        // 保留 WebSocket 推送的文件计数（loadTask 不含此字段）
+        images_count: existing?.images_count, videos_count: existing?.videos_count,
+      }
       publishStatus.value[pt.platform_id] = { status: pt.publish_status, progress: pt.upload_progress, error: pt.publish_error }
     }
     connectWs()
@@ -501,6 +506,13 @@ export const usePipelineStore = defineStore('pipeline', () => {
     await api('PUT', `/pipeline/${taskId.value}/step/5/confirm`)
   }
 
+  /** 确认水印结果，推进到发布 */
+  async function confirmWatermarkDone() {
+    if (!taskId.value) return
+    await api('PUT', `/pipeline/${taskId.value}/step/5/done`)
+    currentStep.value = 5
+  }
+
   /** 发布 */
   async function publish(platformIds: number[] = []) {
     if (!taskId.value) return
@@ -525,6 +537,10 @@ export const usePipelineStore = defineStore('pipeline', () => {
           ...wmProgress.value[data.platform_id],
           status: data.wm_status,
           progress: data.wm_progress ?? wmProgress.value[data.platform_id]?.progress ?? 0,
+          name: data.platform_name ?? wmProgress.value[data.platform_id]?.name ?? '',
+          images_count: data.wm_images_count ?? wmProgress.value[data.platform_id]?.images_count,
+          videos_count: data.wm_videos_count ?? wmProgress.value[data.platform_id]?.videos_count,
+          error: data.wm_error ?? wmProgress.value[data.platform_id]?.error,
         }
       }
       if (data.publish_status) {
@@ -579,7 +595,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     generateCopy, confirmCopy,
     previewRename, confirmRename,
     generateCover, confirmCover,
-    confirmWatermark, publish,
+    confirmWatermark, confirmWatermarkDone, publish,
     saveDraft, loadDraft, clearDraft,
     cleanup, reset,
   }
