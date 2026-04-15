@@ -30,8 +30,8 @@ services:
       - ./config.json:/app/config.json:ro
       # 上传/输出持久化（代码写入 /app/backend/uploads/）
       - ./backend/uploads:/app/backend/uploads
-      # 挂载本地素材目录 — 容器内可直接读取
-      - D:/Users/Public/claude_ia:/mnt/materials
+      # 挂载本地素材目录 — 容器内可直接读取（本地开发在 .env 设置 MATERIALS_DIR）
+      - ${MATERIALS_DIR:-/tmp/omnipub_materials}:/mnt/materials
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1

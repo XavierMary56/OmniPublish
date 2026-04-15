@@ -18,6 +18,9 @@ tmp/
 config.json
 !config.json.example
 
+# 本地环境变量（素材目录路径等）
+.env
+
 # Node (legacy v2 frontend)
 frontend/node_modules/
 frontend/dist/
