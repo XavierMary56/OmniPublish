@@ -1,6 +1,6 @@
 """OmniPublish V2.0 — 认证路由"""
 
-import asyncpg
+import sqlite3
 from fastapi import APIRouter, HTTPException, Depends
 from models.user import LoginRequest, UserInfo, UserCreate, UserRole
 from models.common import ApiResponse
@@ -64,7 +64,7 @@ async def create_user(req: UserCreate):
                 req.username, hashed, req.display_name, req.dept, req.role.value,
             )
             return ApiResponse.success(message=f"用户 {req.username} 创建成功")
-        except asyncpg.UniqueViolationError:
+        except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail=f"用户名 {req.username} 已存在")
 
 

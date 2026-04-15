@@ -1,45 +1,193 @@
-"""OmniPublish V2.0 — PostgreSQL 数据库管理（asyncpg 连接池）"""
+"""OmniPublish V2.0 — SQLite 数据库管理（aiosqlite，兼容 asyncpg API）"""
 
-import asyncpg
+import aiosqlite
 import asyncio
 import json
 import os
-from typing import Optional
+import re
+import sqlite3
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Optional
 
 from config import settings
 
-# 数据库连接 URL
-DATABASE_URL = os.environ.get("DATABASE_URL", settings.database_url)
+# 数据库文件路径（优先环境变量，其次 config.json，最后 data/ 默认目录）
+_default_db = Path(__file__).parent.parent / "data" / "omnipub.db"
+DB_PATH: str = os.environ.get("DB_PATH", settings.db_path or str(_default_db))
 
-# 全局连接池
-_pool: Optional[asyncpg.Pool] = None
-_pool_lock = asyncio.Lock()
+# 确保 data 目录存在
+Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 
 # ══════════════════════════════════════
-# 建表 SQL（PostgreSQL 语法）
+# PostgreSQL → SQLite SQL 转换
+# ══════════════════════════════════════
+
+def _pg_to_sqlite(sql: str) -> str:
+    """把 asyncpg 风格的 SQL 转成 SQLite 语法。"""
+    # $1, $2 → ?
+    sql = re.sub(r'\$\d+', '?', sql)
+    # col::date → date(col)
+    sql = re.sub(r'(\w+)::date', r'date(\1)', sql)
+    # CURRENT_DATE - 1 → date('now', '-1 day')
+    sql = re.sub(r"CURRENT_DATE\s*-\s*(\d+)", r"date('now', '-\1 day')", sql)
+    # CURRENT_DATE → date('now')
+    sql = sql.replace('CURRENT_DATE', "date('now')")
+    # INTERVAL 'N days' → handled in specific queries
+    sql = re.sub(r"CURRENT_TIMESTAMP\s*-\s*INTERVAL\s+'(\d+)\s+days?'",
+                 r"datetime('now', '-\1 days')", sql)
+    return sql
+
+
+# ══════════════════════════════════════
+# 行包装器（让 dict 访问与 asyncpg 一致）
+# ══════════════════════════════════════
+
+class _Row(dict):
+    """dict 子类，支持 row["col"] 和 dict(row)，与 asyncpg Record 兼容。"""
+    pass
+
+
+def _make_rows(cursor: aiosqlite.Cursor, raw_rows) -> list[_Row]:
+    cols = [d[0] for d in cursor.description] if cursor.description else []
+    return [_Row(zip(cols, row)) for row in raw_rows]
+
+
+# ══════════════════════════════════════
+# 连接包装器（提供 asyncpg 同名方法）
+# ══════════════════════════════════════
+
+class _Conn:
+    def __init__(self, conn: aiosqlite.Connection):
+        self._c = conn
+
+    async def execute(self, sql: str, *args) -> str:
+        sql = _pg_to_sqlite(sql)
+        await self._c.execute(sql, args)
+        await self._c.commit()
+        return f"OK"
+
+    async def executemany(self, sql: str, args_list) -> None:
+        sql = _pg_to_sqlite(sql)
+        await self._c.executemany(sql, args_list)
+        await self._c.commit()
+
+    async def fetch(self, sql: str, *args) -> list[_Row]:
+        sql = _pg_to_sqlite(sql)
+        async with self._c.execute(sql, args) as cur:
+            rows = await cur.fetchall()
+            return _make_rows(cur, rows)
+
+    async def fetchrow(self, sql: str, *args) -> Optional[_Row]:
+        sql = _pg_to_sqlite(sql)
+        async with self._c.execute(sql, args) as cur:
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            return _make_rows(cur, [row])[0]
+
+    async def fetchval(self, sql: str, *args) -> Any:
+        sql = _pg_to_sqlite(sql)
+        async with self._c.execute(sql, args) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+    # 便捷：在同一事务内多次写操作
+    async def execute_many_ddl(self, statements: list[str]) -> None:
+        for sql in statements:
+            sql = sql.strip()
+            if sql:
+                await self._c.execute(sql)
+        await self._c.commit()
+
+
+# ══════════════════════════════════════
+# 连接池（单机版：共享同一个连接）
+# ══════════════════════════════════════
+
+class _Pool:
+    """
+    单机 SQLite 伪连接池。
+    因 SQLite 文件锁限制，使用单连接 + asyncio.Lock 串行访问。
+    WAL 模式下读并发没问题，写操作自动排队。
+    """
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._conn: Optional[aiosqlite.Connection] = None
+        self._lock = asyncio.Lock()
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._db_path)
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute("PRAGMA foreign_keys=ON")
+            await self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._conn
+
+    @asynccontextmanager
+    async def acquire(self):
+        """with pool.acquire() as conn: — 与 asyncpg Pool 接口一致。"""
+        async with self._lock:
+            raw = await self._get_conn()
+            yield _Conn(raw)
+
+    async def close(self):
+        if self._conn:
+            await self._conn.close()
+            self._conn = None
+
+
+# ══════════════════════════════════════
+# 全局池单例
+# ══════════════════════════════════════
+
+_pool: Optional[_Pool] = None
+_pool_lock = asyncio.Lock()
+
+
+async def get_pool() -> _Pool:
+    global _pool
+    if _pool is not None:
+        return _pool
+    async with _pool_lock:
+        if _pool is None:
+            _pool = _Pool(DB_PATH)
+    return _pool
+
+
+async def get_db() -> _Conn:
+    """向后兼容旧接口（不推荐直接用，请用 pool.acquire()）。"""
+    pool = await get_pool()
+    # 此处返回原始连接供旧代码使用（不经 context manager）
+    raw = await pool._get_conn()
+    return _Conn(raw)
+
+
+# ══════════════════════════════════════
+# 建表 SQL（SQLite 语法）
 # ══════════════════════════════════════
 
 SCHEMA_SQL = [
     # 用户表
     """
     CREATE TABLE IF NOT EXISTS users (
-        id           SERIAL PRIMARY KEY,
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
         username     TEXT NOT NULL UNIQUE,
         password     TEXT NOT NULL,
         display_name TEXT NOT NULL DEFAULT '',
         dept         TEXT DEFAULT '',
         role         TEXT DEFAULT 'editor',
         is_active    INTEGER DEFAULT 1,
-        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
 
     # 业务线/平台配置表
     """
     CREATE TABLE IF NOT EXISTS platforms (
-        id              SERIAL PRIMARY KEY,
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
         name            TEXT NOT NULL UNIQUE,
         dept            TEXT DEFAULT '',
         categories      TEXT DEFAULT '[]',
@@ -59,15 +207,15 @@ SCHEMA_SQL = [
         session_token   TEXT DEFAULT '',
         session_expires TEXT DEFAULT '',
         is_active       INTEGER DEFAULT 1,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
 
     # 发帖任务主表
     """
     CREATE TABLE IF NOT EXISTS tasks (
-        id                 SERIAL PRIMARY KEY,
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
         task_no            TEXT NOT NULL UNIQUE,
         title              TEXT DEFAULT '',
         folder_path        TEXT NOT NULL,
@@ -89,21 +237,21 @@ SCHEMA_SQL = [
         cover_layout       TEXT DEFAULT 'triple',
         cover_path         TEXT DEFAULT '',
         cover_candidates   TEXT DEFAULT '[]',
-        created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        finished_at        TIMESTAMP DEFAULT NULL
+        created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+        finished_at        DATETIME DEFAULT NULL
     )
     """,
 
     # 步骤状态表
     """
     CREATE TABLE IF NOT EXISTS task_steps (
-        id          SERIAL PRIMARY KEY,
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id     INTEGER NOT NULL REFERENCES tasks(id),
         step        INTEGER NOT NULL,
         status      TEXT DEFAULT 'pending',
-        started_at  TIMESTAMP DEFAULT NULL,
-        finished_at TIMESTAMP DEFAULT NULL,
+        started_at  DATETIME DEFAULT NULL,
+        finished_at DATETIME DEFAULT NULL,
         data        TEXT DEFAULT '{}',
         error       TEXT DEFAULT NULL,
         UNIQUE(task_id, step)
@@ -113,7 +261,7 @@ SCHEMA_SQL = [
     # 平台子任务表
     """
     CREATE TABLE IF NOT EXISTS platform_tasks (
-        id                 SERIAL PRIMARY KEY,
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id            INTEGER NOT NULL REFERENCES tasks(id),
         platform_id        INTEGER NOT NULL REFERENCES platforms(id),
         wm_status          TEXT DEFAULT 'pending',
@@ -131,8 +279,8 @@ SCHEMA_SQL = [
         publish_status     TEXT DEFAULT 'pending',
         publish_result     TEXT DEFAULT '{}',
         publish_error      TEXT DEFAULT NULL,
-        created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(task_id, platform_id)
     )
     """,
@@ -140,41 +288,39 @@ SCHEMA_SQL = [
     # 操作日志表
     """
     CREATE TABLE IF NOT EXISTS task_logs (
-        id          SERIAL PRIMARY KEY,
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id     INTEGER NOT NULL REFERENCES tasks(id),
         step        INTEGER DEFAULT NULL,
         platform_id INTEGER DEFAULT NULL,
         level       TEXT DEFAULT 'info',
         message     TEXT NOT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
 
-    # 账号表（CMS 平台登录凭据，password_encrypted 字段实际存明文密码用于 CMS 自动登录）
+    # 账号表
     """
     CREATE TABLE IF NOT EXISTS accounts (
-        id                  SERIAL PRIMARY KEY,
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         platform_id         INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
         username            TEXT DEFAULT '',
         password_encrypted  TEXT DEFAULT '',
         login_status        TEXT DEFAULT 'unknown',
-        last_login_at       TIMESTAMP DEFAULT NULL,
+        last_login_at       DATETIME DEFAULT NULL,
         last_error          TEXT DEFAULT '',
-        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(platform_id)
     )
     """,
 
-    # ── 索引（基础） ──
+    # 索引
     "CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_platform_tasks_task ON platform_tasks(task_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_logs_task ON task_logs(task_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps(task_id)",
-
-    # ── 索引（性能优化） ──
     "CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(created_by, status)",
     "CREATE INDEX IF NOT EXISTS idx_pt_platform ON platform_tasks(platform_id)",
@@ -184,81 +330,40 @@ SCHEMA_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_tasks_no ON tasks(task_no)",
 ]
 
-DEFAULT_ADMIN_SQL = """
-    INSERT INTO users (username, password, display_name, dept, role)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (username) DO NOTHING
-"""
-
 
 # ══════════════════════════════════════
-# 连接池管理
+# 初始化 / 关闭
 # ══════════════════════════════════════
-
-async def get_pool() -> asyncpg.Pool:
-    """获取全局连接池。"""
-    global _pool
-    if _pool is not None:
-        return _pool
-    async with _pool_lock:
-        # double-check after acquiring lock
-        if _pool is None:
-            _pool = await asyncpg.create_pool(
-                DATABASE_URL,
-                min_size=2,
-                max_size=20,
-                command_timeout=60,
-            )
-    return _pool
-
-
-async def get_db() -> asyncpg.Connection:
-    """从连接池获取连接（向后兼容旧接口）。"""
-    pool = await get_pool()
-    return await pool.acquire()
-
-
-async def release_db(conn: asyncpg.Connection):
-    """归还连接到连接池。"""
-    pool = await get_pool()
-    await pool.release(conn)
-
 
 async def init_db():
     """初始化数据库（建表 + 默认数据）。"""
-    print(f"[DB] Initializing PostgreSQL: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
+    print(f"[DB] Initializing SQLite: {DB_PATH}")
     pool = await get_pool()
 
     async with pool.acquire() as conn:
-        # 逐条执行建表语句
-        for sql in SCHEMA_SQL:
-            sql = sql.strip()
-            if sql:
-                await conn.execute(sql)
+        # 建表
+        await conn.execute_many_ddl(SCHEMA_SQL)
 
-        # 插入默认管理员
-        # 密码: admin123 (bcrypt hash)
+        # 插入默认管理员（admin / admin123）
         await conn.execute(
-            DEFAULT_ADMIN_SQL,
+            """INSERT INTO users (username, password, display_name, dept, role)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (username) DO NOTHING""",
             'admin',
             '$2b$12$8DgwGZ8lNtWmiC/967ocIuldJep3UNUNbkeJXrYh1wuHggDoHRVqq',
-            '管理员',
-            '系统',
-            'admin',
+            '管理员', '系统', 'admin',
         )
 
         # 统计
-        user_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+        user_count     = await conn.fetchval("SELECT COUNT(*) FROM users")
         platform_count = await conn.fetchval("SELECT COUNT(*) FROM platforms")
-        task_count = await conn.fetchval("SELECT COUNT(*) FROM tasks")
+        task_count     = await conn.fetchval("SELECT COUNT(*) FROM tasks")
         print(f"[DB] Users: {user_count}, Platforms: {platform_count}, Tasks: {task_count}")
 
-        # 启动时清理过期日志
-        deleted = await cleanup_old_logs(conn)
-        if deleted and int(deleted.split()[-1]) > 0:
-            print(f"[DB] Cleaned up old log entries")
+        # 清理过期日志
+        await cleanup_old_logs(conn)
 
-    print("[DB] PostgreSQL initialized successfully")
+    print("[DB] SQLite initialized successfully")
 
 
 async def close_db():
@@ -278,16 +383,13 @@ async def get_next_task_no() -> str:
 
 
 # ══════════════════════════════════════
-# 日志清理
+# 维护工具
 # ══════════════════════════════════════
 
-async def cleanup_old_logs(conn: asyncpg.Connection, days: int = 30) -> str:
+async def cleanup_old_logs(conn: _Conn, days: int = 30) -> None:
     """清理超过 N 天的操作日志。"""
-    import datetime
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
-    return await conn.execute(
-        "DELETE FROM task_logs WHERE created_at < $1",
-        cutoff,
+    await conn.execute(
+        f"DELETE FROM task_logs WHERE created_at < datetime('now', '-{days} days')",
     )
 
 
@@ -299,15 +401,16 @@ async def get_db_stats() -> dict:
         for table in ['users', 'platforms', 'tasks', 'task_steps', 'platform_tasks', 'task_logs']:
             stats[table] = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
 
-        # 数据库大小
-        db_size = await conn.fetchval(
-            "SELECT pg_database_size(current_database())"
-        )
-        stats['db_size_mb'] = round(db_size / 1024 / 1024, 2) if db_size else 0
+        # SQLite 文件大小
+        try:
+            size_bytes = os.path.getsize(DB_PATH)
+            stats['db_size_mb'] = round(size_bytes / 1024 / 1024, 2)
+        except OSError:
+            stats['db_size_mb'] = 0
 
         # 今日任务数
         stats['today_tasks'] = await conn.fetchval(
-            "SELECT COUNT(*) FROM tasks WHERE created_at::date = CURRENT_DATE"
+            "SELECT COUNT(*) FROM tasks WHERE date(created_at) = date('now')"
         )
 
         return stats

@@ -1,53 +1,30 @@
 version: "3.8"
 
-services:
-  db:
-    image: postgres:15-alpine
-    container_name: omnipub-db
-    environment:
-      - POSTGRES_DB=omnipub
-      - POSTGRES_USER=omnipub
-      - POSTGRES_PASSWORD=omnipub2026
-      - TZ=Asia/Shanghai
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U omnipub -d omnipub"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+# OmniPublish V2.0 — 单机版（SQLite，无需 PostgreSQL）
+# 使用方式: docker compose up -d
+# 或直接运行: python backend/main.py（推荐单机使用）
 
+services:
   omnipub:
     build: .
     container_name: omnipub
     ports:
       - "9527:9527"
     volumes:
-      # 配置文件 (热更新无需重建)
+      # 配置文件
       - ./config.json:/app/config.json:ro
-      # 上传/输出持久化（代码写入 /app/backend/uploads/）
+      # SQLite 数据库持久化
+      - ./data:/app/data
+      # 上传/水印文件持久化
       - ./backend/uploads:/app/backend/uploads
-      # 挂载本地素材目录 — 容器内可直接读取（本地开发在 .env 设置 MATERIALS_DIR）
+      # 素材目录（本地 .env 设置 MATERIALS_DIR）
       - ${MATERIALS_DIR:-/tmp/omnipub_materials}:/mnt/materials
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://omnipub:omnipub2026@db:5432/omnipub
-      - OMNIPUB_AUTH_SECRET=omnipub-jwt-secret-x7k9m2p4v8w1
-    depends_on:
-      db:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9527/api/ping')"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-volumes:
-  pgdata:
-    external: true
-    name: omnipublish_omnipub-pgdata

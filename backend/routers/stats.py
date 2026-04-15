@@ -64,7 +64,7 @@ async def overview(
 
         # 昨日总发帖数
         yesterday_total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM tasks WHERE created_at::date = CURRENT_DATE - 1 {user_filter}",
+            f"SELECT COUNT(*) FROM tasks WHERE date(created_at) = date('now', '-1 day') {user_filter}",
             *user_params,
         )
 
@@ -176,13 +176,13 @@ async def pipeline_timing(
 
 
 def _date_filter(period: str) -> str:
-    """生成日期过滤 SQL 片段。"""
+    """生成日期过滤 SQL 片段（SQLite 语法）。"""
     if period == "today":
-        return "created_at::date = CURRENT_DATE"
+        return "date(created_at) = date('now')"
     elif period == "week":
-        return "created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'"
+        return "created_at >= datetime('now', '-7 days')"
     elif period == "month":
-        return "created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'"
+        return "created_at >= datetime('now', '-30 days')"
     return "1=1"
 
 
