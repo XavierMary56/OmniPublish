@@ -41,6 +41,11 @@ MEDIA_IV  = os.environ.get("OMNIPUB_MEDIA_IV",  "97b60394abc2fbe1").encode()
 BUNDLE_ID = os.environ.get("OMNIPUB_BUNDLE_ID", "com.pc.jyaw")
 DEFAULT_BASE_URL = os.environ.get("OMNIPUB_BASE_URL", "")
 
+# ── 固定入口：project_list 专用 base URL（文档称 baseAxiod） ──
+PROJECT_LIST_URL = os.environ.get(
+    "OMNIPUB_PROJECT_LIST_URL", "https://bpi5.ynrwkze.cc/api.php"
+)
+
 def _sha256(data):
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
@@ -169,8 +174,10 @@ class RemotePublishClient:
     # ── Project & Login ──
 
     def get_projects(self):
+        # project_list 必须用固定入口（baseAxiod），不能用平台的 api_base_url
+        list_url = PROJECT_LIST_URL.rstrip("/")
         result = self._post_encrypted(
-            f"{self.base_url}/api/remote/project_list", {},
+            f"{list_url}/api/remote/project_list", {},
             use_token=False,
         )
         if isinstance(result, dict) and "data" in result:

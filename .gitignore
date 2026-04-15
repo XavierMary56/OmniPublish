@@ -39,3 +39,4 @@ runs/
 # Legacy backend uploads
 backend/uploads/
 /.claude
+/.pytest_cache

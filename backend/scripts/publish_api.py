@@ -58,6 +58,23 @@ MEDIA_IV  = _CRYPTO["media_iv"]
 BUNDLE_ID = _CRYPTO["bundle_id"]
 DEFAULT_BASE_URL = os.environ.get("OMNIPUB_BASE_URL", "")
 
+# ── 固定入口：project_list 专用 base URL（文档称 baseAxiod） ──
+def _load_project_list_url():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_file = os.path.join(script_dir, "..", "..", "config.json")
+    if not os.path.exists(config_file):
+        config_file = os.path.join(script_dir, "..", "config.json")
+    if os.path.exists(config_file):
+        with open(config_file, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+            return cfg.get("project_list_url", "")
+    return ""
+
+PROJECT_LIST_URL = os.environ.get(
+    "OMNIPUB_PROJECT_LIST_URL",
+    _load_project_list_url() or "https://bpi5.ynrwkze.cc/api.php",
+)
+
 # 启动时校验密钥是否已配置 — 快速失败，避免运行时加密错误
 if not APPKEY or len(KEY) < 16 or len(IV) < 16:
     print("[FATAL] 加密密钥未配置或不完整，无法安全启动！")
@@ -213,8 +230,10 @@ class RemotePublishClient:
     # ── Project & Login ──
 
     def get_projects(self):
+        # project_list 必须用固定入口（baseAxiod），不能用平台的 api_base_url
+        list_url = PROJECT_LIST_URL.rstrip("/")
         result = self._post_encrypted(
-            f"{self.base_url}/api/remote/project_list", {},
+            f"{list_url}/api/remote/project_list", {},
             use_token=False,
         )
         if isinstance(result, dict) and "data" in result:

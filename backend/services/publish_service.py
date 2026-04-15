@@ -197,6 +197,8 @@ class PublishService:
             )
 
             # ── 2. 扫描素材 ──
+            # 图片从水印目录（src_folder）取，视频和 TXT 从原始目录（folder_path）取
+            # 水印服务只处理图片，视频仍在原始目录中
             img_exts = {".jpg", ".jpeg", ".png", ".webp"}
             vid_exts = {".mp4", ".mov", ".avi", ".mkv"}
             all_files = sorted(os.listdir(src_folder))
@@ -206,14 +208,26 @@ class PublishService:
             cover_files = [f for f in all_files
                            if "_cover" in f.lower()
                            and os.path.splitext(f)[1].lower() in img_exts]
-            video_files = [f for f in all_files
-                           if os.path.splitext(f)[1].lower() in vid_exts]
-            txt_files = [f for f in all_files if f.endswith(".txt")]
+
+            # 视频和 TXT 始终从原始素材目录扫描（水印目录不包含视频）
+            wm_vid_path = pt.get("wm_video_path", "")
+            if wm_vid_path and os.path.isfile(wm_vid_path):
+                # 有水印后的视频文件，直接使用
+                video_files = [os.path.basename(wm_vid_path)]
+                video_base_dir = os.path.dirname(wm_vid_path)
+            else:
+                orig_files = sorted(os.listdir(folder_path))
+                video_files = [f for f in orig_files
+                               if os.path.splitext(f)[1].lower() in vid_exts]
+                video_base_dir = folder_path
+
+            orig_files_for_txt = sorted(os.listdir(folder_path)) if src_folder != folder_path else all_files
+            txt_files = [f for f in orig_files_for_txt if f.endswith(".txt")]
 
             # 如果有 TXT 但任务没有标题，从 TXT 解析
             if txt_files and not title:
                 meta = await asyncio.to_thread(
-                    parse_txt_file, os.path.join(src_folder, txt_files[0])
+                    parse_txt_file, os.path.join(folder_path, txt_files[0])
                 )
                 title = meta.get("title", title)
                 keywords = meta.get("keywords", keywords)
@@ -260,7 +274,7 @@ class PublishService:
                 )
                 video_results = []
                 for i, vf in enumerate(video_files):
-                    video_path = os.path.join(src_folder, vf)
+                    video_path = os.path.join(video_base_dir, vf)
                     display_name = f"{title}_{i+1}" if len(video_files) > 1 else title
                     result = await asyncio.to_thread(
                         client.upload_video, video_path, cover_url, display_name
