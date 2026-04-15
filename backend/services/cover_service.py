@@ -151,6 +151,11 @@ class CoverService:
                 "UPDATE tasks SET cover_path = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
                 cover_path, task_id,
             )
+            # 重置水印状态，确保进入水印步骤时显示方案预览
+            await conn.execute(
+                "UPDATE platform_tasks SET wm_status = 'pending', wm_progress = 0, wm_error = NULL WHERE task_id = $1",
+                task_id,
+            )
 
         # 推进到 Step 5
         await pipeline_service.advance_step(task_id, from_step=3, to_step=4)

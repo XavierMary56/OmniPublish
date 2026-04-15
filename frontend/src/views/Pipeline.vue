@@ -305,6 +305,10 @@ async function handlePrev() {
       await store.loadTask(store.taskId, false)
     } catch {}
   }
+  // 返回水印步时，清空旧进度以显示方案预览
+  if (store.currentStep === 4) {
+    store.wmProgress = {}
+  }
 }
 
 // Step 3 重命名预览 — 本地实时计算

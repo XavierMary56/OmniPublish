@@ -408,8 +408,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
       }
     }
 
-    // 加载平台子任务状态
+    // 加载平台子任务状态（pending 状态不写入 wmProgress，避免遮盖方案预览）
     for (const pt of (data.platform_tasks || [])) {
+      if (pt.wm_status === 'pending') continue
       const existing = wmProgress.value[pt.platform_id]
       wmProgress.value[pt.platform_id] = {
         status: pt.wm_status, progress: pt.wm_progress, name: pt.platform_name, error: pt.wm_error,
@@ -501,6 +502,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     if (!taskId.value) return
     await api('PUT', `/pipeline/${taskId.value}/step/4/confirm`, { cover_index: index })
     selectedCover.value = index
+    wmProgress.value = {}  // 清空旧数据，确保显示水印方案预览
     currentStep.value = 4
   }
 
