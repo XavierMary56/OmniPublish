@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { usePipelineStore } from './stores/pipeline'
@@ -9,6 +9,40 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const pipeline = usePipelineStore()
+
+// Notification bell (H8)
+const notifCount = ref(0)
+const showNotifications = ref(false)
+const notifications = ref<{ id: number; type: string; message: string; time: string }[]>([])
+
+function onNotification(data: any) {
+  if (data.type === 'notification' || data.type === 'task_update' || data.type === 'alert') {
+    notifications.value.unshift({
+      id: Date.now(),
+      type: data.type,
+      message: data.message || data.text || JSON.stringify(data),
+      time: new Date().toLocaleTimeString(),
+    })
+    if (notifications.value.length > 50) notifications.value.pop()
+    notifCount.value++
+  }
+  if (data.type === 'unread_count') {
+    notifCount.value = data.count ?? 0
+  }
+}
+
+function clearNotifications() {
+  notifCount.value = 0
+  notifications.value = []
+  showNotifications.value = false
+}
+
+function closeNotifPanel(e: Event) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.notif-bell') && !target.closest('.notif-panel')) {
+    showNotifications.value = false
+  }
+}
 
 const isLoginPage = computed(() => route.name === 'login')
 
@@ -61,7 +95,14 @@ onMounted(async () => {
   if (auth.token) {
     await auth.fetchMe()
     notificationWs.connect(auth.token)
+    notificationWs.on('*', onNotification)
   }
+  document.addEventListener('click', closeNotifPanel)
+})
+
+onUnmounted(() => {
+  notificationWs.off('*', onNotification)
+  document.removeEventListener('click', closeNotifPanel)
 })
 </script>
 
@@ -105,7 +146,24 @@ onMounted(async () => {
         <span style="font-size:16px;font-weight:700">{{ pageTitle }}</span>
         <div style="display:flex;align-items:center;gap:14px">
           <span style="font-size:12px;color:var(--t2)">👤 {{ auth.user?.display_name || '' }}</span>
+          <div class="notif-bell" @click.stop="showNotifications = !showNotifications">
+            🔔<span v-if="notifCount > 0" class="notif-badge">{{ notifCount > 99 ? '99+' : notifCount }}</span>
+          </div>
           <button class="btn btn-primary" @click="navigate('pipeline')">＋ 新建发帖任务</button>
+        </div>
+        <!-- Notification Panel -->
+        <div v-if="showNotifications" class="notif-panel" @click.stop>
+          <div class="notif-panel-header">
+            <span style="font-weight:600;font-size:13px">通知</span>
+            <span v-if="notifications.length" class="notif-clear" @click="clearNotifications">清空</span>
+          </div>
+          <div class="notif-panel-body">
+            <div v-if="!notifications.length" style="padding:24px;text-align:center;color:var(--t3);font-size:12px">暂无通知</div>
+            <div v-for="n in notifications" :key="n.id" class="notif-item">
+              <div class="notif-msg">{{ n.message }}</div>
+              <div class="notif-time">{{ n.time }}</div>
+            </div>
+          </div>
         </div>
       </div>
       <!-- 全局上传进度条 — 切换页面也可见 -->
@@ -158,6 +216,33 @@ onMounted(async () => {
 .topbar {
   height: 54px; background: var(--bg1); border-bottom: 1px solid var(--bd);
   display: flex; align-items: center; justify-content: space-between; padding: 0 28px; flex-shrink: 0;
+  position: relative;
 }
 .page-container { padding: 24px 28px 40px; flex: 1; overflow-y: auto; }
+
+/* Notification Bell (H8) */
+.notif-bell { position: relative; cursor: pointer; font-size: 18px; user-select: none; padding: 2px 4px; }
+.notif-bell:hover { filter: brightness(1.2); }
+.notif-badge {
+  position: absolute; top: -6px; right: -8px;
+  background: var(--red); color: #fff; font-size: 10px; font-weight: 700;
+  min-width: 16px; height: 16px; line-height: 16px; text-align: center;
+  border-radius: 10px; padding: 0 4px;
+}
+.notif-panel {
+  position: absolute; top: 54px; right: 28px; width: 320px; max-height: 400px;
+  background: var(--bg1); border: 1px solid var(--bd); border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.35); z-index: 200; overflow: hidden;
+}
+.notif-panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--bd);
+}
+.notif-clear { font-size: 11px; color: var(--primary); cursor: pointer; }
+.notif-clear:hover { text-decoration: underline; }
+.notif-panel-body { max-height: 340px; overflow-y: auto; }
+.notif-item { padding: 10px 16px; border-bottom: 1px solid var(--bd); }
+.notif-item:last-child { border-bottom: none; }
+.notif-msg { font-size: 12px; color: var(--t1); line-height: 1.4; }
+.notif-time { font-size: 10px; color: var(--t3); margin-top: 4px; }
 </style>

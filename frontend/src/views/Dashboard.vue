@@ -1,41 +1,122 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http'
 
 const router = useRouter()
-const stats = ref({ total: 47, done: 38, running: 6, failed: 3, platforms: 35 })
-
-const recentTasks = ref([
-  { id:'#0052', title:'极品女神私密视频流出…', platforms:[{n:'91视频',c:'badge-primary'},{n:'海角社区',c:'badge-green'},{n:'+3',c:'badge-plain'}], steps:['done','done','run','wait','wait','wait'], pct:40, pColor:'var(--primary)', st:'进行中', sc:'badge-primary', time:'2026-04-11 10:42' },
-  { id:'#0051', title:'大学生情侣出租屋偷拍…', platforms:[{n:'黑料情报局',c:'badge-orange'},{n:'91porn',c:'badge-purple'}], steps:['done','done','done','done','run','wait'], pct:78, pColor:'var(--primary)', st:'切片中', sc:'badge-orange', time:'2026-04-11 10:28' },
-  { id:'#0050', title:'网红主播浴室大尺度直播…', platforms:[{n:'糖心',c:'badge-pink'},{n:'9色视频',c:'badge-cyan'},{n:'+5',c:'badge-plain'}], steps:['done','done','done','done','done','done'], pct:100, pColor:'var(--green)', st:'已完成', sc:'badge-green', time:'2026-04-11 10:05' },
-  { id:'#0049', title:'某高校教授丑闻曝光…', platforms:[{n:'18黑料',c:'badge-red'},{n:'黑料吃瓜',c:'badge-orange'}], steps:['done','done','hold','wait','wait','wait'], pct:35, pColor:'var(--orange)', st:'待确认', sc:'badge-orange', time:'2026-04-11 09:51' },
-])
-
-const barData = [
-  { label:'91视频', val:12, pct:85, color:'var(--primary)' },
-  { label:'海角社区', val:9, pct:64, color:'var(--green)' },
-  { label:'黑料情报', val:7, pct:50, color:'var(--orange)' },
-  { label:'91porn', val:6, pct:43, color:'var(--purple)' },
-  { label:'糖心', val:5, pct:36, color:'var(--pink)' },
-  { label:'9色视频', val:4, pct:28, color:'var(--cyan)' },
-  { label:'其他', val:4, pct:28, color:'var(--red)' },
-]
-
-const pendingItems = [
-  { id:'#0052', label:'封面待确认', desc:'3 张候选封面等待选择', st:'待确认', sc:'badge-orange' },
-  { id:'#0049', label:'封面不满意', desc:'需要手动重新选图生成', st:'需处理', sc:'badge-red' },
-  { id:'#0051', label:'等待视频切片', desc:'预计还需 3 分钟', st:'等待中', sc:'badge-primary' },
-]
+const stats = ref({ total: 0, done: 0, running: 0, failed: 0, platforms: 0, success_rate: 0, awaiting_confirm: 0, yesterday_total: 0 })
+const recentTasks = ref<any[]>([])
+const barData = ref<any[]>([])
+const pendingItems = ref<any[]>([])
 
 const stepNames = ['文案','重命名','封面','水印','上传','发布']
+const badgeColors = ['badge-primary','badge-green','badge-orange','badge-purple','badge-pink','badge-cyan','badge-red']
+const barColors = ['var(--primary)','var(--green)','var(--orange)','var(--purple)','var(--pink)','var(--cyan)','var(--red)']
+
+const statusMap: Record<string, { label: string; badge: string }> = {
+  draft:             { label: '草稿',   badge: 'badge-plain' },
+  running:           { label: '进行中', badge: 'badge-primary' },
+  slicing:           { label: '切片中', badge: 'badge-orange' },
+  awaiting_confirm:  { label: '待确认', badge: 'badge-orange' },
+  done:              { label: '已完成', badge: 'badge-green' },
+  failed:            { label: '失败',   badge: 'badge-red' },
+  partial:           { label: '部分失败', badge: 'badge-red' },
+}
+
+/* Map raw task to display row */
+function mapTask(t: any) {
+  const id = '#' + String(t.task_no || t.id).padStart(4, '0')
+  const title = (t.title || '').length > 16 ? t.title.slice(0, 16) + '…' : (t.title || '')
+
+  // Platform badges
+  const ptNames: string[] = (t.platform_tasks || []).map((pt: any) => pt.platform_name)
+  const shown = ptNames.slice(0, 2).map((n: string, i: number) => ({ n, c: badgeColors[i % badgeColors.length] }))
+  if (ptNames.length > 2) shown.push({ n: '+' + (ptNames.length - 2), c: 'badge-plain' })
+
+  // Steps
+  const stepStatuses: string[] = []
+  if (t.steps && t.steps.length) {
+    for (let i = 0; i < 6; i++) {
+      const s = t.steps.find((st: any) => st.step === i)
+      if (!s) { stepStatuses.push('wait'); continue }
+      if (s.status === 'done') stepStatuses.push('done')
+      else if (s.status === 'running') stepStatuses.push('run')
+      else if (s.status === 'awaiting_confirm') stepStatuses.push('hold')
+      else stepStatuses.push('wait')
+    }
+  } else {
+    const cur = t.current_step || 0
+    for (let i = 0; i < 6; i++) {
+      if (i < cur) stepStatuses.push('done')
+      else if (i === cur && t.status === 'running') stepStatuses.push('run')
+      else stepStatuses.push('wait')
+    }
+  }
+
+  // Progress
+  const doneSteps = stepStatuses.filter(s => s === 'done').length
+  const pct = t.status === 'done' ? 100 : Math.round((doneSteps / 6) * 100)
+  const pColor = t.status === 'done' ? 'var(--green)' : t.status === 'failed' ? 'var(--red)' : 'var(--primary)'
+
+  const sm = statusMap[t.status] || { label: t.status, badge: 'badge-plain' }
+  const time = (t.created_at || '').slice(0, 16).replace('T', ' ')
+
+  return { id, title, platforms: shown, steps: stepStatuses, pct, pColor, st: sm.label, sc: sm.badge, time }
+}
+
+/* Map pending task to display item */
+function mapPending(t: any) {
+  const id = '#' + String(t.task_no || t.id).padStart(4, '0')
+  const holdStep = (t.steps || []).find((s: any) => s.status === 'awaiting_confirm')
+  const stepIdx = holdStep ? holdStep.step : (t.current_step || 0)
+  const label = (stepNames[stepIdx] || '步骤') + '待确认'
+  const desc = (t.title || '').length > 20 ? t.title.slice(0, 20) + '…' : (t.title || '')
+  return { id, label, desc, st: '待确认', sc: 'badge-orange' }
+}
+
+/* Diff text for stats sub */
+const diffText = computed(() => {
+  const diff = stats.value.total - stats.value.yesterday_total
+  if (diff > 0) return `较昨日 ↑ ${diff}`
+  if (diff < 0) return `较昨日 ↓ ${Math.abs(diff)}`
+  return '与昨日持平'
+})
 
 onMounted(async () => {
-  try {
-    const d = await api('GET', '/stats/overview', { period: 'today' })
-    if (d) { stats.value = { ...stats.value, ...d } }
-  } catch {}
+  // Fire all API calls in parallel
+  const [overviewRes, platformsRes, tasksRes, pendingRes] = await Promise.allSettled([
+    api('GET', '/stats/overview', { period: 'today' }),
+    api('GET', '/stats/platforms', { period: 'today' }),
+    api('GET', '/tasks', { page: 1, limit: 5 }),
+    api('GET', '/tasks', { status: 'awaiting_confirm', page: 1, limit: 5 }),
+  ])
+
+  // Stats overview
+  if (overviewRes.status === 'fulfilled' && overviewRes.value) {
+    stats.value = { ...stats.value, ...overviewRes.value }
+  }
+
+  // Bar chart from platforms
+  if (platformsRes.status === 'fulfilled' && Array.isArray(platformsRes.value)) {
+    const platforms = platformsRes.value as any[]
+    const maxVal = Math.max(...platforms.map(p => p.total), 1)
+    barData.value = platforms.slice(0, 7).map((p, i) => ({
+      label: p.name,
+      val: p.total,
+      pct: Math.round((p.total / maxVal) * 100),
+      color: barColors[i % barColors.length],
+    }))
+  }
+
+  // Recent tasks
+  if (tasksRes.status === 'fulfilled' && tasksRes.value?.items) {
+    recentTasks.value = tasksRes.value.items.map(mapTask)
+  }
+
+  // Pending items
+  if (pendingRes.status === 'fulfilled' && pendingRes.value?.items) {
+    pendingItems.value = pendingRes.value.items.map(mapPending)
+  }
 })
 </script>
 
@@ -45,11 +126,11 @@ onMounted(async () => {
 
   <!-- Stats -->
   <div class="stats-row">
-    <div class="stat-card c-primary"><div class="stat-label">今日发帖</div><div class="stat-value">{{ stats.total }}</div><div class="stat-sub">较昨日 ↑ 8</div></div>
-    <div class="stat-card c-green"><div class="stat-label">已完成</div><div class="stat-value">{{ stats.done }}</div><div class="stat-sub">成功率 80.9%</div></div>
-    <div class="stat-card c-orange"><div class="stat-label">流水线进行中</div><div class="stat-value">{{ stats.running }}</div><div class="stat-sub">3 个待人工确认</div></div>
-    <div class="stat-card c-red"><div class="stat-label">发布失败</div><div class="stat-value">{{ stats.failed }}</div><div class="stat-sub">2 个上传超时</div></div>
-    <div class="stat-card c-purple"><div class="stat-label">覆盖平台</div><div class="stat-value">{{ stats.platforms }}</div><div class="stat-sub">今日活跃 18 个</div></div>
+    <div class="stat-card c-primary"><div class="stat-label">今日发帖</div><div class="stat-value">{{ stats.total }}</div><div class="stat-sub">{{ diffText }}</div></div>
+    <div class="stat-card c-green"><div class="stat-label">已完成</div><div class="stat-value">{{ stats.done }}</div><div class="stat-sub">成功率 {{ stats.success_rate }}%</div></div>
+    <div class="stat-card c-orange"><div class="stat-label">流水线进行中</div><div class="stat-value">{{ stats.running }}</div><div class="stat-sub">{{ stats.awaiting_confirm }} 个待人工确认</div></div>
+    <div class="stat-card c-red"><div class="stat-label">发布失败</div><div class="stat-value">{{ stats.failed }}</div><div class="stat-sub">点击查看详情</div></div>
+    <div class="stat-card c-purple"><div class="stat-label">覆盖平台</div><div class="stat-value">{{ stats.platforms }}</div><div class="stat-sub">今日活跃 {{ stats.platforms }} 个</div></div>
   </div>
 
   <div style="display:flex;gap:16px;flex-wrap:wrap">

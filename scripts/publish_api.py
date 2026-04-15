@@ -12,8 +12,11 @@ CLI actions:
   publish        Upload images + match m3u8 via mv_list + create post draft
 """
 
-import argparse, hashlib, json, os, re, sys, time, uuid, random
+import argparse, hashlib, json, os, re, sys, time, uuid, random, warnings
 from base64 import b64encode, b64decode
+
+# 抑制 SSL 验证关闭后的 InsecureRequestWarning
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 try:
     import requests
@@ -80,6 +83,7 @@ class RemotePublishClient:
     def __init__(self, base_url=DEFAULT_BASE_URL):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
+        self.session.verify = False  # 跳过 SSL 证书验证（部分域名证书不匹配）
         # NOTE: Do NOT set Content-Type on session — it breaks multipart uploads
         self.token = None
         self.projects = []

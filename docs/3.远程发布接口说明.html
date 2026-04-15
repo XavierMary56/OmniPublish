@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>远程发布相关接口说明（内部使用）</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --border: #e5e7eb;
+      --warn-bg: #fff7ed;
+      --warn-text: #9a3412;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top right, #e0e7ff, transparent 35%), var(--bg);
+      line-height: 1.7;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 32px auto 56px;
+      padding: 0 18px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #1d4ed8, #2563eb 48%, #3b82f6);
+      color: #fff;
+      border-radius: 18px;
+      padding: 26px 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.3;
+    }
+
+    .hero p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 15px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .notice {
+      background: var(--warn-bg);
+      color: var(--warn-text);
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .toc, .content > section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .toc {
+      padding: 16px 14px;
+      position: sticky;
+      top: 16px;
+      align-self: start;
+    }
+
+    .toc h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+
+    .toc ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc li + li {
+      margin-top: 8px;
+    }
+
+    .toc a {
+      color: #1e40af;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .content {
+      display: grid;
+      gap: 16px;
+    }
+
+    .content > section {
+      padding: 20px 22px;
+    }
+
+    h2, h3, h4 {
+      margin-top: 0;
+      line-height: 1.4;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 12px;
+      color: #0f172a;
+    }
+
+    h3 {
+      font-size: 18px;
+      margin: 16px 0 10px;
+      color: #1d4ed8;
+    }
+
+    h4 {
+      font-size: 16px;
+      margin: 14px 0 8px;
+      color: #1e3a8a;
+    }
+
+    p {
+      margin: 8px 0 10px;
+    }
+
+    ul, ol {
+      margin: 8px 0 10px;
+      padding-left: 22px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 14px;
+      overflow: hidden;
+      border-radius: 10px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--primary-soft);
+      color: #1e3a8a;
+      font-weight: 600;
+    }
+
+    code {
+      background: #eef2ff;
+      color: #1d4ed8;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-size: 13px;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow: auto;
+      margin: 10px 0 14px;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px dashed #cbd5e1;
+      margin: 12px 0;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 920px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="hero">
+      <div class="badge">INTERNAL ONLY</div>
+      <h1>远程发布相关接口说明</h1>
+      <p>本文档根据前端仓库实现整理，便于对接「全项目 ID / 项目码自动匹配」、登录与发布流程。</p>
+    </header>
+
+    <div class="notice"><strong>内部使用：</strong>本页面仅供团队内部联调与开发参考，请勿外传。</div>
+
+    <div class="layout">
+      <aside class="toc">
+        <h2>目录</h2>
+        <ul>
+          <li><a href="#sec1">1. 基础说明</a></li>
+          <li><a href="#sec2">2. 项目列表接口</a></li>
+          <li><a href="#sec3">3. 带项目码的登录</a></li>
+          <li><a href="#sec4">4. 发布类接口</a></li>
+          <li><a href="#sec5">5. 相关代码位置</a></li>
+        </ul>
+      </aside>
+
+      <main class="content">
+        <section id="sec1">
+          <h2>1. 基础说明</h2>
+          <h3>1.1 两套 Base URL</h3>
+          <table>
+            <thead>
+              <tr><th>用途</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>项目列表</strong></td><td>使用固定入口 <code>baseAxiod</code>，默认 <code>https://bpi5.ynrwkze.cc/api.php</code>（代码中可从列表随机选一个）。</td></tr>
+              <tr><td><strong>业务接口（登录、发布等）</strong></td><td>使用 <code>createCustomAxios</code>，<code>baseURL</code> 取自当前选中项目的 <code>Project.api</code> 数组中随机一条（按 <code>project.type</code> 缓存）。</td></tr>
+            </tbody>
+          </table>
+          <p>必须先通过项目列表拿到项目并选中，后续请求的域名才是该项目配置的 API。</p>
+
+          <h3>1.2 POST 请求体加密</h3>
+          <p>除特别说明外，<strong>POST 请求 body</strong> 在发送前会经拦截器合并公共参数后整包加密（<code>encryptData(JSON.stringify(requestData))</code>），响应中 <code>data</code> 字段会解密后解析为 JSON。对接第三方时需与服务端约定同一套加解密规则。</p>
+
+          <h3>1.3 公共请求参数（拦截器自动合并）</h3>
+          <p>以下字段会与业务参数合并后一并加密（<code>project_list</code> 除外）：</p>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>oauth_id</code></td><td>每次请求生成</td></tr>
+              <tr><td><code>bundleId</code></td><td>固定 <code>com.pc.jyaw</code></td></tr>
+              <tr><td><code>version</code></td><td>当前项目 <code>Project.version</code>，缺省 <code>1.0.0</code></td></tr>
+              <tr><td><code>oauth_type</code></td><td><code>web</code></td></tr>
+              <tr><td><code>language</code></td><td><code>zh</code></td></tr>
+              <tr><td><code>via</code></td><td><code>web</code></td></tr>
+              <tr><td><code>token</code></td><td>登录后的 <code>auth_token</code>；调用 <code>/api/remote/project_list</code> 时不带 token</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="sec2">
+          <h2>2. 项目列表接口（用于拿全量项目 ID / 项目码做自动匹配）</h2>
+          <h3>2.1 接口</h3>
+          <ul>
+            <li><strong>方法 / 路径：</strong><code>POST /api/remote/project_list</code></li>
+            <li><strong>客户端：</strong><code>baseAxiod</code>（固定 Base URL）</li>
+            <li><strong>认证：</strong>不传 <code>token</code>（拦截器中对 <code>project_list</code> 特殊处理）</li>
+          </ul>
+
+          <h3>2.2 响应数据模型（前端 <code>Project</code>）</h3>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>id</code></td><td><code>number</code></td><td><strong>项目 ID</strong>，可做全量同步与自动匹配主键</td></tr>
+              <tr><td><code>title</code></td><td><code>string</code></td><td>展示名称</td></tr>
+              <tr><td><code>icon</code></td><td><code>string</code></td><td>图标</td></tr>
+              <tr><td><code>api</code></td><td><code>string[]</code></td><td>该项目业务 API 域名列表（登录、发布等走这里）</td></tr>
+              <tr><td><code>type</code></td><td><code>string</code></td><td>项目类型标识</td></tr>
+              <tr><td><code>via</code></td><td><code>string</code></td><td>如 <code>sns</code> 等，用于区分产品线</td></tr>
+              <tr><td><code>template</code></td><td><code>string</code></td><td>模板</td></tr>
+              <tr><td><code>video</code></td><td><code>boolean?</code></td><td>是否视频相关能力等</td></tr>
+              <tr><td><code>version</code></td><td><code>string</code></td><td>接口版本，影响部分功能分支</td></tr>
+            </tbody>
+          </table>
+
+          <h3>2.3 项目码（与“自动匹配”的关系）</h3>
+          <p>前端登录页所称的项目码并非接口直接返回字段，而是由 <code>type</code> 经 MD5 后取前 8 位得到：</p>
+          <pre><code>项目码 = md5(project.type).slice(0, 8)</code></pre>
+          <p>自动匹配流程建议：</p>
+          <ol>
+            <li>调用 <code>project_list</code> 拉取全量项目；</li>
+            <li>用 <code>id</code> 与本地/运营侧配置映射，或同时缓存 <code>id ↔ md5(type)[0:8]</code>；</li>
+            <li>用户输入项目码时，在列表中查找 <code>md5(type).slice(0,8) === 输入</code> 的项目，选中后设置 <code>currentProject</code>，后续请求走该项目的 <code>api</code> Base URL。</li>
+          </ol>
+        </section>
+
+        <section id="sec3">
+          <h2>3. 带项目码的登录</h2>
+          <p>项目码只在前端用于选中对应 <code>Project</code>。选中后，根据项目类型走不同登录接口。</p>
+
+          <h3>3.1 标准远程登录（非 HLW 类 <code>type</code>）</h3>
+          <ul>
+            <li><strong>路径：</strong><code>POST /api/remote/loginByPassword</code></li>
+            <li><strong>业务 body：</strong><code>{ username, password }</code></li>
+            <li><strong>成功：</strong><code>result.status !== 0</code> 时，token 取 <code>result.data</code>（字符串），写入 <code>auth_token</code></li>
+          </ul>
+
+          <h3>3.2 HLW 类项目（<code>type</code> 匹配 <code>/hlw/</code>）</h3>
+          <ul>
+            <li><strong>登录：</strong><code>POST /api/index/login</code>，body：<code>{ username, password }</code></li>
+            <li><strong>配置：</strong><code>POST /api/index/getClientConfig</code>（登录流程中会拉取站点配置）</li>
+            <li><strong>成功：</strong>token 取 <code>result.data.token</code></li>
+          </ul>
+
+          <h3>3.3 登录前配置（与发布页数据相关）</h3>
+          <ul>
+            <li>非 HLW：<code>POST /api/remote/config</code>（<code>loadAllConfig</code>），用于分类、站点配置等。</li>
+            <li>HLW：<code>POST /api/index/getClientConfig</code>。</li>
+          </ul>
+        </section>
+
+        <section id="sec4">
+          <h2>4. 发布类接口</h2>
+          <p>以下均通过 <code>createCustomAxios</code> 请求当前项目的 <code>api</code> 域名。</p>
+
+          <h3>4.1 视频上传（直传 + 登记）</h3>
+          <p>典型流程（与前端 <code>getR2uploadUrl</code> + PUT + <code>finalyUpload</code> 一致）：</p>
+          <table>
+            <thead>
+              <tr><th>步骤</th><th>接口 / 动作</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><code>POST /api/remote/r2upload_info</code></td><td>获取预签名上传信息；成功返回中含 <code>uploadUrl</code>、<code>UploadName</code>、<code>publicUrl</code> 等（字段名以实际解密后为准）。</td></tr>
+              <tr><td>2</td><td><code>PUT</code> 到返回的 <code>uploadUrl</code></td><td>请求体为视频二进制，<code>Content-Type: video/mp4</code>。</td></tr>
+              <tr><td>3</td><td><code>POST /api/remote/upload_mv</code></td><td>将视频登记到业务侧，前端示例参数：<code>name</code>、<code>mp4_url</code>、<code>cover</code>、<code>upload_type: 1</code>。</td></tr>
+            </tbody>
+          </table>
+          <p>另：部分环境可能使用 S3 兼容地址直传（如 <code>s3-asia.microservices.vip</code> 获取链接），与上述 R2 流程二选一，以实际配置为准。</p>
+
+          <h3>4.2 视频发布</h3>
+          <ul>
+            <li><strong>路径：</strong><code>POST /api/remote/create_video</code></li>
+            <li><strong>前端提交字段示例：</strong></li>
+          </ul>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>title</code></td><td>标题</td></tr>
+              <tr><td><code>cover</code></td><td>封面</td></tr>
+              <tr><td><code>m3u8_uri</code></td><td>选用视频（列表中的 m3u8 等）</td></tr>
+              <tr><td><code>m3u8_url</code></td><td>可选，与所选视频相关</td></tr>
+              <tr><td><code>description</code></td><td>描述</td></tr>
+              <tr><td><code>keywords</code></td><td>关键词（提交前会将 <code>#</code>、多余逗号规范化）</td></tr>
+              <tr><td><code>tags</code></td><td>标签（同上规范化）</td></tr>
+              <tr><td><code>cate_ids</code></td><td>分类 ID 拼接字符串，如 <code>1</code> 或 <code>1,2</code></td></tr>
+            </tbody>
+          </table>
+          <p>成功判断：前端以 <code>res.status === 1</code> 为发布成功（与通用 <code>status !== 0</code> 的用法注意区分）。</p>
+
+          <h3>4.3 帖子发布（标题、分类、标签等）</h3>
+          <p>按项目分为两套：</p>
+
+          <h4>A. 标准远程（<code>create_update</code>）</h4>
+          <ul>
+            <li><strong>路径：</strong><code>POST /api/remote/create_update</code></li>
+            <li><strong>主要字段：</strong></li>
+          </ul>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>title</code></td><td>标题</td></tr>
+              <tr><td><code>category_id</code></td><td>分类，提交为逗号分隔字符串（如 <code>1,2</code>）</td></tr>
+              <tr><td><code>author_id</code></td><td>作者 ID（可选，视配置是否展示）</td></tr>
+              <tr><td><code>tags</code> / <code>keyword</code></td><td>标签、关键词（提交前规范化）</td></tr>
+              <tr><td><code>desc</code></td><td>描述</td></tr>
+              <tr><td><code>cover</code></td><td>封面</td></tr>
+              <tr><td><code>body</code></td><td>正文（Markdown）</td></tr>
+              <tr><td><code>created</code></td><td>创建时间字符串</td></tr>
+              <tr><td><code>sort</code> / <code>hot_num</code> / <code>top</code></td><td>排序、热度、置顶等（视配置）</td></tr>
+              <tr><td><code>is_draft</code></td><td>草稿 / 提交等状态（如 <code>1</code> 发布、<code>3</code> 草稿等，与版本有关）</td></tr>
+              <tr><td><code>is_best</code></td><td>精选等</td></tr>
+              <tr><td><code>id</code></td><td>编辑时传帖子 ID；新建可为 <code>null</code></td></tr>
+              <tr><td><code>redirect</code></td><td>管理员跳转链接（可选）</td></tr>
+            </tbody>
+          </table>
+          <p>另：配置驱动的 <code>products.inherit</code>、<code>products.constants</code> 会合并进最终参数，以各产品 <code>getProductParams()</code> 为准。</p>
+
+          <h4>B. HLW 线路（<code>addArticle</code>）</h4>
+          <ul>
+            <li><strong>路径：</strong><code>POST /api/index/addArticle</code></li>
+            <li><strong>字段示例：</strong><code>title</code>、<code>thumb</code>（封面）、<code>content</code>（正文 Markdown）、<code>tag</code>、<code>keyword</code></li>
+          </ul>
+        </section>
+
+        <section id="sec5">
+          <h2>5. 相关代码位置（便于核对）</h2>
+          <table>
+            <thead>
+              <tr><th>模块</th><th>路径</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>项目列表与项目码</td><td><code>src/stores/project.ts</code></td></tr>
+              <tr><td>请求封装与加密</td><td><code>src/lib/request.ts</code></td></tr>
+              <tr><td>登录与 HLW 分支</td><td><code>src/stores/auth.ts</code>、<code>src/services/api/api.ts</code></td></tr>
+              <tr><td>视频发布表单</td><td><code>src/pages/videopublish/index.vue</code></td></tr>
+              <tr><td>帖子发布表单</td><td><code>src/pages/publish/index.vue</code></td></tr>
+              <tr><td>API 定义汇总</td><td><code>src/services/api/api.ts</code></td></tr>
+              <tr><td>上传登记</td><td><code>src/services/api/upload.ts</code>、<code>src/stores/upload.ts</code></td></tr>
+            </tbody>
+          </table>
+          <hr class="divider" />
+          <p class="footer"><em>文档生成自仓库当前实现，若服务端字段或成功码有调整，请以接口文档或实际解密后的响应为准。</em></p>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

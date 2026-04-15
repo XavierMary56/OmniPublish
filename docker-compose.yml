@@ -31,7 +31,7 @@ services:
       # 上传/输出持久化（代码写入 /app/backend/uploads/）
       - ./backend/uploads:/app/backend/uploads
       # 挂载本地素材目录 — 容器内可直接读取
-      - /mnt/d/Users/Public/claude_ia:/mnt/materials
+      - D:/Users/Public/claude_ia:/mnt/materials
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1

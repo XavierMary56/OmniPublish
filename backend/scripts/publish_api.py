@@ -110,8 +110,14 @@ class RemotePublishClient:
     MIN_REQUEST_INTERVAL = float(os.environ.get("OMNIPUB_RATE_LIMIT", "1.0"))
 
     def __init__(self, base_url=DEFAULT_BASE_URL):
-        self.base_url = base_url.rstrip("/")
+        # 去掉 URL 中的 hash fragment（如 /#/auth/login）
+        clean_url = base_url.split("#")[0] if "#" in base_url else base_url
+        self.base_url = clean_url.rstrip("/")
         self.session = requests.Session()
+        # 禁用 SSL 验证（部分平台证书不匹配，Docker 环境 CA 可能不全）
+        self.session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         # NOTE: Do NOT set Content-Type on session — it breaks multipart uploads
         self.token = None
         self.projects = []

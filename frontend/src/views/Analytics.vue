@@ -1,41 +1,126 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { api } from '../api/http'
 
-const period = ref('today')
+const period = ref('今日')
 const periods = ['今日','本周','本月','自定义']
+const loading = ref(false)
 
-const overviewStats = [
-  { label:'总发帖量', val:'47', sub:'日均 42.3', cls:'c-primary' },
-  { label:'成功率', val:'80.9%', sub:'目标 ≥85%', cls:'c-green' },
-  { label:'平均流水线耗时', val:'6.2min', sub:'V1.0 人工基线 ~25min', cls:'c-purple' },
-  { label:'人工介入率', val:'31%', sub:'文案确认 + 封面确认', cls:'c-orange' },
-]
+// Period label -> API param mapping
+const periodMap: Record<string, string> = {
+  '今日': 'today',
+  '本周': 'week',
+  '本月': 'month',
+  '自定义': 'all',
+}
 
-const platformStats = [
-  { name:'91视频web', today:12, ok:11, fail:1, rate:'91.7%', avg:'5.8min', rateGreen:true },
-  { name:'海角社区', today:9, ok:8, fail:1, rate:'88.9%', avg:'6.1min', rateGreen:false },
-  { name:'黑料情报局', today:7, ok:6, fail:1, rate:'85.7%', avg:'5.4min', rateGreen:false },
-  { name:'91porn', today:6, ok:6, fail:0, rate:'100%', avg:'4.2min', rateGreen:true },
-  { name:'糖心', today:5, ok:4, fail:1, rate:'80.0%', avg:'7.0min', rateGreen:false },
-  { name:'9色视频', today:4, ok:4, fail:0, rate:'100%', avg:'5.5min', rateGreen:true },
-  { name:'海角社区 web', today:3, ok:3, fail:0, rate:'100%', avg:'6.8min', rateGreen:true },
-  { name:'91暗网', today:1, ok:1, fail:0, rate:'100%', avg:'8.2min', rateGreen:true },
-]
+// Days in period for daily average calculation
+function daysInPeriod(p: string): number {
+  if (p === 'today') return 1
+  if (p === 'week') return 7
+  if (p === 'month') return 30
+  return 1
+}
 
-const editors = [
-  { rank:'🥇', name:'张伟', count:18 },
-  { rank:'🥈', name:'李梦', count:14 },
-  { rank:'🥉', name:'王超', count:10 },
-  { rank:'', name:'陈晓', count:5 },
-]
+// Step color mapping
+const stepColorMap: Record<string, string> = {
+  '素材': 'var(--primary)',
+  '平台': 'var(--primary)',
+  '文案': 'var(--green)',
+  '重命名': 'var(--orange)',
+  '封面': 'var(--purple)',
+  '水印': 'var(--red)',
+  '上传': 'var(--cyan, #00bcd4)',
+}
 
-const stepTimings = [
-  { name:'文案生成', pct:20, color:'var(--primary)', time:'0.8min' },
-  { name:'图片重命名', pct:5, color:'var(--green)', time:'0.1min' },
-  { name:'封面制作', pct:25, color:'var(--orange)', time:'1.0min' },
-  { name:'水印处理', pct:50, color:'var(--purple)', time:'2.1min' },
-  { name:'上传发布', pct:55, color:'var(--red)', time:'2.2min' },
-]
+function getStepColor(stepName: string): string {
+  for (const [key, color] of Object.entries(stepColorMap)) {
+    if (stepName.includes(key)) return color
+  }
+  return 'var(--primary)'
+}
+
+// Reactive data
+const overviewStats = ref<Array<{ label: string; val: string; sub: string; cls: string }>>([])
+const platformStats = ref<Array<{ name: string; today: number; ok: number; fail: number; rate: string; avg: string; rateGreen: boolean }>>([])
+const totalPlatformCount = ref(0)
+const editors = ref<Array<{ rank: string; name: string; count: number }>>([])
+const stepTimings = ref<Array<{ name: string; pct: number; color: string; time: string }>>([])
+
+async function loadData() {
+  const apiPeriod = periodMap[period.value] ?? 'today'
+  loading.value = true
+  try {
+    // Fetch all 4 endpoints in parallel
+    const [overview, platforms, editorList, timings] = await Promise.all([
+      api('GET', '/stats/overview', { period: apiPeriod }).catch(() => null),
+      api('GET', '/stats/platforms', { period: apiPeriod }).catch(() => null),
+      api('GET', '/stats/editors', { period: apiPeriod }).catch(() => null),
+      api('GET', '/stats/pipeline-timing', { period: apiPeriod }).catch(() => null),
+    ])
+
+    // --- Overview stats (4 cards) ---
+    const timingsArr = Array.isArray(timings) ? timings : []
+    const totalMinutes = timingsArr.reduce((sum: number, t: any) => sum + (t.avg_minutes ?? 0), 0)
+    const total = overview?.total ?? 0
+    const awaitingConfirm = overview?.awaiting_confirm ?? 0
+    const dailyAvg = total > 0 ? (total / daysInPeriod(apiPeriod)).toFixed(1) : '0'
+    const interventionRate = total > 0
+      ? (awaitingConfirm / total * 100).toFixed(1) + '%'
+      : '—'
+
+    overviewStats.value = [
+      { label: '总发帖量', val: String(total), sub: `日均 ${dailyAvg}`, cls: 'c-primary' },
+      { label: '成功率', val: (overview?.success_rate ?? 0) + '%', sub: '目标 ≥85%', cls: 'c-green' },
+      { label: '平均流水线耗时', val: totalMinutes.toFixed(1) + 'min', sub: 'V1.0 人工基线 ~25min', cls: 'c-purple' },
+      { label: '人工介入率', val: interventionRate, sub: '文案确认 + 封面确认', cls: 'c-orange' },
+    ]
+
+    // --- Platform stats table ---
+    const platformArr = Array.isArray(platforms) ? platforms : []
+    totalPlatformCount.value = overview?.platforms ?? platformArr.length
+    platformStats.value = platformArr.map((p: any) => {
+      const rate = p.total > 0 ? (p.success / p.total * 100) : 0
+      return {
+        name: p.name,
+        today: p.total,
+        ok: p.success,
+        fail: p.failed,
+        rate: rate.toFixed(1) + '%',
+        avg: '—',
+        rateGreen: rate >= 85,
+      }
+    })
+
+    // --- Editor ranking ---
+    const editorArr = Array.isArray(editorList) ? editorList : []
+    const rankEmoji = ['🥇', '🥈', '🥉']
+    editors.value = editorArr.map((e: any, i: number) => ({
+      rank: rankEmoji[i] ?? '',
+      name: e.display_name,
+      count: e.total ?? e.done ?? 0,
+    }))
+
+    // --- Step timings bar chart ---
+    const maxMin = timingsArr.length > 0
+      ? Math.max(...timingsArr.map((t: any) => t.avg_minutes ?? 0), 0.01)
+      : 1
+    stepTimings.value = timingsArr.map((t: any) => ({
+      name: t.name,
+      pct: Math.round(((t.avg_minutes ?? 0) / maxMin) * 100),
+      color: getStepColor(t.name),
+      time: (t.avg_minutes ?? 0).toFixed(1) + 'min',
+    }))
+  } catch (e) {
+    console.error('[Analytics] Failed to load stats:', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+// Load on mount and when period changes
+onMounted(loadData)
+watch(period, loadData)
 </script>
 
 <template>
@@ -47,6 +132,10 @@ const stepTimings = [
     </div>
   </div>
 
+  <!-- Loading overlay -->
+  <div v-if="loading" style="text-align:center;padding:40px 0;color:var(--t3);font-size:13px">加载中…</div>
+
+  <template v-else>
   <!-- Overview -->
   <div class="stats-row">
     <div v-for="s in overviewStats" :key="s.label" class="stat-card" :class="s.cls">
@@ -79,7 +168,7 @@ const stepTimings = [
               <td :style="{color: p.rateGreen ? 'var(--green)' : 'var(--t2)'}">{{ p.rate }}</td>
               <td>{{ p.avg }}</td>
             </tr>
-            <tr><td style="color:var(--t3)">其他 23 个平台</td><td>0</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+            <tr v-if="totalPlatformCount > platformStats.length"><td style="color:var(--t3)">其他 {{ totalPlatformCount - platformStats.length }} 个平台</td><td>0</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
           </tbody>
         </table>
       </div>
@@ -94,6 +183,7 @@ const stepTimings = [
             <span>{{ e.rank }} {{ !e.rank ? '' : '' }}<span :style="{paddingLeft: e.rank ? '0' : '24px'}">{{ e.name }}</span></span>
             <span :style="{color: e.count >= 10 ? 'var(--primary)' : 'var(--t2)', fontWeight: e.count >= 10 ? 700 : 400}">{{ e.count }} 篇</span>
           </div>
+          <div v-if="editors.length === 0" style="color:var(--t3);font-size:12px;text-align:center;padding:12px 0">暂无数据</div>
         </div>
       </div>
 
@@ -107,10 +197,12 @@ const stepTimings = [
             </div>
             <span style="width:50px;text-align:right;color:var(--t2)">{{ s.time }}</span>
           </div>
+          <div v-if="stepTimings.length === 0" style="color:var(--t3);font-size:12px;text-align:center;padding:12px 0">暂无数据</div>
         </div>
       </div>
     </div>
   </div>
+  </template>
 </div>
 </template>
 

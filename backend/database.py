@@ -159,6 +159,7 @@ SCHEMA_SQL = [
         password_encrypted  TEXT DEFAULT '',
         login_status        TEXT DEFAULT 'unknown',
         last_login_at       TIMESTAMP DEFAULT NULL,
+        last_error          TEXT DEFAULT '',
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(platform_id)

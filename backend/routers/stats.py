@@ -47,12 +47,36 @@ async def overview(
 
         success_rate = round(done / total * 100, 1) if total > 0 else 0
 
+        # 覆盖平台数（去重活跃平台）
+        platforms = await conn.fetchval(
+            f"""SELECT COUNT(DISTINCT pt.platform_id)
+                FROM platform_tasks pt
+                JOIN tasks t ON pt.task_id = t.id
+                WHERE {date_filter.replace('created_at', 't.created_at')} {user_filter.replace('created_by', 't.created_by')}""",
+            *user_params,
+        )
+
+        # 待人工确认数
+        awaiting_confirm = await conn.fetchval(
+            f"SELECT COUNT(*) FROM tasks WHERE status = 'awaiting_confirm' AND {date_filter} {user_filter}",
+            *user_params,
+        )
+
+        # 昨日总发帖数
+        yesterday_total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM tasks WHERE created_at::date = CURRENT_DATE - 1 {user_filter}",
+            *user_params,
+        )
+
         return ApiResponse.success(data={
             "total": total,
             "done": done,
             "failed": failed,
             "running": running,
             "success_rate": success_rate,
+            "platforms": platforms or 0,
+            "awaiting_confirm": awaiting_confirm or 0,
+            "yesterday_total": yesterday_total or 0,
         })
 
 

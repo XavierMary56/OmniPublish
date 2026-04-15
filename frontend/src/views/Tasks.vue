@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http'
 
@@ -7,6 +7,31 @@ const router = useRouter()
 const activeFilter = ref('全部')
 const filters = ['全部','进行中','待确认','切片中','已完成','失败']
 const loading = ref(true)
+
+// Search & Pagination (H2 + H3)
+const searchQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalItems = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize.value)))
+
+const filterStatusMap: Record<string, string> = {
+  '全部': '',
+  '进行中': 'running',
+  '待确认': 'awaiting_confirm',
+  '切片中': 'slicing',
+  '已完成': 'done',
+  '失败': 'failed',
+}
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadTasks()
+  }, 400)
+}
 
 const stepNames = ['文案','重命名','封面','水印','上传','发布']
 const statusMap: Record<string, { label: string; badge: string }> = {
@@ -41,14 +66,35 @@ onMounted(async () => {
 async function loadTasks() {
   loading.value = true
   try {
-    const data = await api('GET', '/tasks')
+    const params: Record<string, string | number> = {
+      page: currentPage.value,
+      limit: pageSize.value,
+    }
+    const status = filterStatusMap[activeFilter.value]
+    if (status) params.status = status
+    if (searchQuery.value.trim()) params.search = searchQuery.value.trim()
+    const data = await api('GET', '/tasks', params)
     tasks.value = data.items || data || []
+    totalItems.value = data.total ?? tasks.value.length
   } catch (e) {
     console.error('加载任务失败', e)
     tasks.value = []
+    totalItems.value = 0
   } finally {
     loading.value = false
   }
+}
+
+// Watch filter changes -> reset page and reload
+watch(activeFilter, () => {
+  currentPage.value = 1
+  loadTasks()
+})
+
+function goPage(page: number) {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+  loadTasks()
 }
 
 function toggleExpand(id: number) {
@@ -56,19 +102,8 @@ function toggleExpand(id: number) {
   else expanded.value.add(id)
 }
 
-// 筛选
-const filteredTasks = computed(() => {
-  if (activeFilter.value === '全部') return tasks.value
-  const filterMap: Record<string, string[]> = {
-    '进行中': ['running'],
-    '待确认': ['awaiting_confirm'],
-    '切片中': ['running'], // 切片是 running 的子状态
-    '已完成': ['done'],
-    '失败': ['failed'],
-  }
-  const statuses = filterMap[activeFilter.value] || []
-  return tasks.value.filter(t => statuses.includes(t.status))
-})
+// filteredTasks — now server-side, just use tasks directly
+const filteredTasks = computed(() => tasks.value)
 
 // 统计
 const miniStats = computed(() => [
@@ -160,6 +195,11 @@ function formatTime(dt: string): string {
     <div class="filter-row">
       <button v-for="f in filters" :key="f" class="filter-btn" :class="{active: activeFilter===f}" @click="activeFilter=f">{{ f }}</button>
     </div>
+  </div>
+
+  <!-- Search Box (H2) -->
+  <div class="search-bar" style="margin-bottom:12px">
+    <input class="search-input" type="text" v-model="searchQuery" @input="onSearchInput" placeholder="🔍 搜索任务编号、标题、关键词..." />
   </div>
 
   <!-- Mini Stats -->
@@ -256,10 +296,34 @@ function formatTime(dt: string): string {
       </tbody>
     </table>
   </div>
+
+  <!-- Pagination (H3) -->
+  <div v-if="totalPages > 1" class="pagination">
+    <button class="page-btn" :disabled="currentPage <= 1" @click="goPage(1)">«</button>
+    <button class="page-btn" :disabled="currentPage <= 1" @click="goPage(currentPage - 1)">‹</button>
+    <template v-for="p in totalPages" :key="p">
+      <button v-if="p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)"
+              class="page-btn" :class="{ active: p === currentPage }" @click="goPage(p)">{{ p }}</button>
+      <span v-else-if="p === currentPage - 3 || p === currentPage + 3" class="page-ellipsis">…</span>
+    </template>
+    <button class="page-btn" :disabled="currentPage >= totalPages" @click="goPage(currentPage + 1)">›</button>
+    <button class="page-btn" :disabled="currentPage >= totalPages" @click="goPage(totalPages)">»</button>
+    <span class="page-info">共 {{ totalItems }} 条</span>
+  </div>
 </div>
 </template>
 
 <style scoped>
+.search-input{width:100%;padding:9px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;color:var(--t1);font-size:13px;outline:none;transition:border-color .2s}
+.search-input:focus{border-color:var(--primary)}
+.search-input::placeholder{color:var(--t3)}
+.pagination{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:16px;padding:8px 0}
+.page-btn{min-width:32px;height:32px;padding:0 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;color:var(--t2);font-size:13px;cursor:pointer;transition:.15s}
+.page-btn:hover:not(:disabled){background:var(--bg3);color:var(--t1)}
+.page-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.page-btn:disabled{opacity:.35;cursor:not-allowed}
+.page-ellipsis{color:var(--t3);font-size:14px;padding:0 4px}
+.page-info{margin-left:12px;font-size:12px;color:var(--t3)}
 .sub-task-row{display:flex;align-items:center;gap:14px;padding:8px 14px 8px 44px;border-bottom:1px solid rgba(42,42,58,.5);font-size:12px}
 .sub-task-row:last-child{border-bottom:none}
 .expand-row td{border-bottom:none}
