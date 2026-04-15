@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from models.task import (
     CreateTaskRequest, GenerateCopyRequest, ConfirmCopyRequest,
     ConfirmRenameRequest, ConfirmCoverRequest, PublishRequest,
+    ConfirmWatermarkRequest,
 )
 from models.common import ApiResponse
 from models.user import UserInfo
@@ -711,9 +712,15 @@ async def get_watermark_plan(task_id: int, user: UserInfo = Depends(get_current_
 
 
 @router.put("/{task_id}/step/5/confirm")
-async def confirm_watermark(task_id: int, bg: BackgroundTasks, user: UserInfo = Depends(get_current_user)):
-    """确认水印方案，开始并行处理。"""
-    bg.add_task(watermark_service.process_all_platforms, task_id)
+async def confirm_watermark(
+    task_id: int,
+    bg: BackgroundTasks,
+    body: ConfirmWatermarkRequest = ConfirmWatermarkRequest(),
+    user: UserInfo = Depends(get_current_user),
+):
+    """确认水印方案，开始并行处理。可携带各平台自定义参数覆盖默认配置。"""
+    overrides = [o.dict() for o in body.overrides] if body.overrides else []
+    bg.add_task(watermark_service.process_all_platforms, task_id, overrides)
     return ApiResponse.success(message="水印处理已启动，各平台并行处理中")
 
 

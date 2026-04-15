@@ -19,6 +19,21 @@ const localPathInput = ref('')
 const wmPlan = ref<any[]>([])
 const wmSkipped = ref<any[]>([])
 
+// 正在展开编辑的平台 ID（null = 无）
+const wmEditingId = ref<number | null>(null)
+
+function wmPositionLabel(pos: string): string {
+  const map: Record<string, string> = {
+    'bottom-right': '右下角', 'bottom-left': '左下角',
+    'top-right': '右上角', 'top-left': '左上角', 'center': '居中',
+  }
+  return map[pos] || pos || '右下角'
+}
+
+function toggleWmEdit(pid: number) {
+  wmEditingId.value = wmEditingId.value === pid ? null : pid
+}
+
 // 水印状态中文映射
 function wmStatusLabel(status: string): string {
   const map: Record<string, string> = { pending: '等待中', running: '处理中', done: '✅ 完成', failed: '失败', skipped: '已跳过' }
@@ -280,10 +295,15 @@ function autoFillFromTxt() {
   }
 }
 
-// 返回上一步
-function handlePrev() {
-  if (store.currentStep > 0) {
-    store.currentStep = store.currentStep - 1
+// 返回上一步（各步数据保留，不清除）
+async function handlePrev() {
+  if (store.currentStep <= 0) return
+  store.currentStep = store.currentStep - 1
+  // 返回封面步时，若 store 中无封面候选则从服务端补载
+  if (store.currentStep === 3 && !store.coverCandidates.length && store.taskId) {
+    try {
+      await store.loadTask(store.taskId, false)
+    } catch {}
   }
 }
 
@@ -377,7 +397,7 @@ async function handleGenerateCover() {
           let stepData = step3.data
           if (typeof stepData === 'string') try { stepData = JSON.parse(stepData) } catch {}
           if (stepData?.candidates) store.coverCandidates = stepData.candidates
-          await store.loadTask(store.taskId!)
+          await store.loadTask(store.taskId!, false)
         } else if (step3?.status === 'failed') {
           isGeneratingCover.value = false
           alert('封面生成失败: ' + (step3.error || '未知错误'))
@@ -429,6 +449,8 @@ async function handleConfirmCover() {
   isSubmitting.value = true
   try {
     await store.confirmCover(store.selectedCover)
+    // 封面确认后立即保存草稿，防止上一步丢失封面候选
+    store.saveDraft()
   } catch (e: any) {
     alert(e.response?.data?.detail || e.message || '确认封面失败')
   } finally {
@@ -440,12 +462,20 @@ async function handleConfirmWatermark() {
   if (isSubmitting.value) return
   isSubmitting.value = true
   try {
-    await store.confirmWatermark()
+    // 将本地编辑过的水印参数作为 overrides 传给后端
+    const overrides = wmPlan.value.map(p => ({
+      platform_id: p.platform_id,
+      img_wm_position: p.wm_position || p.img_wm_position,
+      img_wm_width: p.wm_width || p.img_wm_width,
+      vid_wm_mode: p.vid_wm_mode,
+      vid_wm_scale: p.vid_wm_scale,
+    }))
+    await store.confirmWatermark(overrides)
     // 轮询等待水印处理完成（WebSocket 会推送进度，这里做超时保护）
     const pollWm = setInterval(async () => {
       if (!store.taskId) { clearInterval(pollWm); return }
       try {
-        await store.loadTask(store.taskId)
+        await store.loadTask(store.taskId, false)
         // 水印全部完成或进入下一步时停止轮询
         const allWmDone = Object.values(store.wmProgress).length > 0 &&
           Object.values(store.wmProgress).every(p => p.status === 'done' || p.status === 'skipped' || p.status === 'failed')
@@ -992,18 +1022,65 @@ function handleDiscardDraft() {
             <p style="font-size:12px;color:var(--t2);margin-bottom:14px">以下是各目标平台的水印方案，确认后系统将自动为图片和视频添加对应水印。</p>
 
             <!-- 水印方案预览卡片 -->
-            <div v-if="wmPlan.length" class="wm-preview-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px">
-              <div v-for="p in wmPlan" :key="p.platform_id" style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:14px">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                  <span style="font-size:13px;font-weight:600">{{ p.name }}</span>
-                  <span class="badge" :class="p.has_vid_wm ? 'badge-primary' : p.has_img_wm ? 'badge-green' : 'badge-plain'" style="font-size:10px;padding:1px 6px">
-                    {{ p.has_vid_wm && p.has_img_wm ? '图片+视频' : p.has_vid_wm ? '仅视频' : '仅图片' }}
-                  </span>
+            <div v-if="wmPlan.length" style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+              <div v-for="p in wmPlan" :key="p.platform_id"
+                   style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;overflow:hidden">
+                <!-- 卡片头 -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:600">{{ p.name }}</span>
+                    <span class="badge" :class="p.has_vid_wm ? 'badge-primary' : p.has_img_wm ? 'badge-green' : 'badge-plain'" style="font-size:10px;padding:1px 6px">
+                      {{ p.has_vid_wm && p.has_img_wm ? '图片+视频' : p.has_vid_wm ? '仅视频' : '仅图片' }}
+                    </span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--t2)">
+                    <span v-if="p.has_img_wm">{{ p.wm_image }} · {{ wmPositionLabel(p.wm_position || 'bottom-right') }} · {{ p.wm_width || 264 }}px</span>
+                    <span v-if="p.has_vid_wm && p.has_img_wm" style="color:var(--bd)">|</span>
+                    <span v-if="p.has_vid_wm">{{ p.wm_video }} · {{ wmModeLabel(p.vid_wm_mode) }} · {{ p.vid_wm_scale || 30 }}%</span>
+                    <button class="btn btn-ghost btn-sm" style="padding:2px 10px;font-size:11px"
+                            @click="toggleWmEdit(p.platform_id)">
+                      {{ wmEditingId === p.platform_id ? '收起' : '✏️ 编辑' }}
+                    </button>
+                  </div>
                 </div>
-                <div style="font-size:11px;color:var(--t2);line-height:1.8">
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>图片水印</span><span style="color:var(--t1)">{{ p.wm_image ? `${p.wm_image} · ${p.wm_position || '右下角'}` : '无需' }}</span></div>
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>视频水印</span><span style="color:var(--t1)">{{ p.wm_video ? `${p.wm_video} · ${wmModeLabel(p.vid_wm_mode)}` : '无需' }}</span></div>
-                  <div style="display:flex;justify-content:space-between;padding:2px 0"><span>水印缩放</span><span style="color:var(--t1)">{{ p.vid_wm_scale || p.wm_width || 264 }}{{ p.vid_wm_scale ? '%' : 'px' }}</span></div>
+                <!-- 展开编辑区 -->
+                <div v-if="wmEditingId === p.platform_id"
+                     style="padding:12px 14px 14px;border-top:1px solid var(--bd);background:var(--bg2);display:flex;flex-wrap:wrap;gap:12px">
+                  <!-- 图片水印参数 -->
+                  <template v-if="p.has_img_wm">
+                    <div class="form-group" style="flex:1;min-width:140px;margin:0">
+                      <label style="font-size:11px">图片水印位置</label>
+                      <select v-model="p.wm_position" class="form-select" style="font-size:12px">
+                        <option value="bottom-right">右下角</option>
+                        <option value="bottom-left">左下角</option>
+                        <option value="top-right">右上角</option>
+                        <option value="top-left">左上角</option>
+                        <option value="center">居中</option>
+                      </select>
+                    </div>
+                    <div class="form-group" style="flex:1;min-width:120px;margin:0">
+                      <label style="font-size:11px">图片水印宽度(px)</label>
+                      <input type="number" v-model.number="p.wm_width" class="form-input" style="font-size:12px" min="50" max="800" />
+                    </div>
+                  </template>
+                  <!-- 视频水印参数 -->
+                  <template v-if="p.has_vid_wm">
+                    <div class="form-group" style="flex:1;min-width:140px;margin:0">
+                      <label style="font-size:11px">视频水印模式</label>
+                      <select v-model="p.vid_wm_mode" class="form-select" style="font-size:12px">
+                        <option value="corner-cycle">四角轮转</option>
+                        <option value="fixed">固定位置</option>
+                        <option value="dual-diagonal">双水印对角</option>
+                      </select>
+                    </div>
+                    <div class="form-group" style="flex:1;min-width:100px;margin:0">
+                      <label style="font-size:11px">视频水印缩放(%)</label>
+                      <input type="number" v-model.number="p.vid_wm_scale" class="form-input" style="font-size:12px" min="5" max="80" />
+                    </div>
+                  </template>
+                  <div style="width:100%;display:flex;justify-content:flex-end">
+                    <button class="btn btn-ghost btn-sm" style="font-size:11px" @click="wmEditingId = null">✓ 完成编辑</button>
+                  </div>
                 </div>
               </div>
             </div>

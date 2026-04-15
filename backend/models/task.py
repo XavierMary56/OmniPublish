@@ -82,6 +82,20 @@ class ConfirmCoverRequest(BaseModel):
     cover_index: int = 0  # 候选封面索引
 
 
+class WmPlatformOverride(BaseModel):
+    """Step 5：单个平台水印自定义参数。"""
+    platform_id: int
+    img_wm_position: Optional[str] = None   # bottom-right / bottom-left / top-right / top-left / center
+    img_wm_width: Optional[int] = None       # 水印宽度(px)
+    vid_wm_mode: Optional[str] = None        # corner-cycle / fixed / dual-diagonal
+    vid_wm_scale: Optional[float] = None     # 视频水印缩放比例(%)
+
+
+class ConfirmWatermarkRequest(BaseModel):
+    """Step 5 确认：可选携带各平台自定义参数。"""
+    overrides: List[WmPlatformOverride] = []
+
+
 class PublishRequest(BaseModel):
     """Step 6：触发发布。"""
     platform_ids: List[int] = []  # 空列表 = 发布全部已就绪

@@ -264,6 +264,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
       fileManifest: fileManifest.value,
       copyResult: copyResult.value,
       renamePrefix: renamePrefix.value,
+      coverCandidates: coverCandidates.value,
+      selectedCover: selectedCover.value,
       savedAt: Date.now(),
     }
     localStorage.setItem('omnipub_draft', JSON.stringify(draft))
@@ -290,6 +292,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (draft.fileManifest) fileManifest.value = draft.fileManifest
       if (draft.copyResult) copyResult.value = draft.copyResult
       if (draft.renamePrefix) renamePrefix.value = draft.renamePrefix
+      if (draft.coverCandidates?.length) coverCandidates.value = draft.coverCandidates
+      if (draft.selectedCover !== undefined) selectedCover.value = draft.selectedCover
 
       // 验证服务端任务是否还存在
       if (draft.taskId) {
@@ -357,12 +361,12 @@ export const usePipelineStore = defineStore('pipeline', () => {
     return data
   }
 
-  /** 加载已有任务 */
-  async function loadTask(id: number) {
+  /** 加载已有任务。syncStep=false 时只刷新数据不改 currentStep（WebSocket 刷新用） */
+  async function loadTask(id: number, syncStep = true) {
     const data = await api('GET', `/pipeline/${id}`)
     taskId.value = data.id
     taskNo.value = data.task_no
-    currentStep.value = data.current_step
+    if (syncStep) currentStep.value = data.current_step
     status.value = data.status
     folderPath.value = data.folder_path
     selectedPlatforms.value = data.target_platforms || []
@@ -500,10 +504,16 @@ export const usePipelineStore = defineStore('pipeline', () => {
     currentStep.value = 4
   }
 
-  /** 确认水印方案 */
-  async function confirmWatermark() {
+  /** 确认水印方案，可携带各平台自定义参数 */
+  async function confirmWatermark(overrides: Array<{
+    platform_id: number
+    img_wm_position?: string
+    img_wm_width?: number
+    vid_wm_mode?: string
+    vid_wm_scale?: number
+  }> = []) {
     if (!taskId.value) return
-    await api('PUT', `/pipeline/${taskId.value}/step/5/confirm`)
+    await api('PUT', `/pipeline/${taskId.value}/step/5/confirm`, { overrides })
   }
 
   /** 确认水印结果，推进到发布 */
@@ -524,12 +534,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
     if (!taskId.value || ws) return
     ws = createTaskWs(taskId.value)
     ws.on('step_changed', (data) => {
-      if (data.to_step !== undefined) currentStep.value = data.to_step
-      // 任何步骤状态变化都重新加载任务数据
-      if (data.status === 'awaiting_confirm' || data.status === 'done' || data.status === 'failed') {
-        if (data.step === 1) isGenerating.value = false
-        if (taskId.value) loadTask(taskId.value)
-      }
+      // 步骤切换完全由用户确认按钮控制，WebSocket 只刷新数据不改 currentStep
+      if (data.step === 1) isGenerating.value = false
+      if (taskId.value) loadTask(taskId.value, false)
     })
     ws.on('platform_update', (data) => {
       if (data.wm_status) {

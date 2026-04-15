@@ -70,14 +70,32 @@ class WatermarkService:
                 "without_wm_count": len(without_wm),
             }
 
-    async def process_all_platforms(self, task_id: int):
-        """确认后并行处理所有平台的水印。"""
+    async def process_all_platforms(self, task_id: int, overrides: list = None):
+        """确认后并行处理所有平台的水印。overrides 可覆盖各平台默认水印参数。"""
         await pipeline_service.update_step_status(task_id, step=4, status="running")
         await pipeline_service.add_log(task_id, "开始并行水印处理", step=4)
 
         plan_data = await self.get_watermark_plan(task_id)
         plan = plan_data.get("platforms", []) if isinstance(plan_data, dict) else plan_data
         skipped = plan_data.get("skipped", []) if isinstance(plan_data, dict) else []
+
+        # 应用前端自定义覆盖参数
+        if overrides:
+            override_map = {o["platform_id"]: o for o in overrides}
+            for p in plan:
+                pid = p.get("platform_id") or p.get("id")
+                if pid in override_map:
+                    ov = override_map[pid]
+                    if ov.get("img_wm_position") is not None:
+                        p["img_wm_position"] = ov["img_wm_position"]
+                        p["wm_position"] = ov["img_wm_position"]
+                    if ov.get("img_wm_width") is not None:
+                        p["img_wm_width"] = ov["img_wm_width"]
+                        p["wm_width"] = ov["img_wm_width"]
+                    if ov.get("vid_wm_mode") is not None:
+                        p["vid_wm_mode"] = ov["vid_wm_mode"]
+                    if ov.get("vid_wm_scale") is not None:
+                        p["vid_wm_scale"] = ov["vid_wm_scale"]
 
         if not plan and not skipped:
             await pipeline_service.update_step_status(
