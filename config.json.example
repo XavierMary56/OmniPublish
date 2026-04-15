@@ -5,12 +5,14 @@
   "api_key": "sk-xxxx你的密钥xxxx",
   "cw_model": "gpt-4o",
 
+  "project_list_url": "https://bpi5.ynrwkze.cc/api.php",
+
   "crypto": {
-    "appkey": "",
-    "aes_key": "",
-    "aes_iv": "",
-    "media_key": "",
-    "media_iv": "",
+    "appkey": "5589d41f92a597d016b037ac37db243d",
+    "aes_key": "2acf7e91e9864673",
+    "aes_iv": "1c29882d3ddfcfd6",
+    "media_key": "f5d965df75336270",
+    "media_iv": "97b60394abc2fbe1",
     "bundle_id": "com.pc.jyaw"
   },
 
