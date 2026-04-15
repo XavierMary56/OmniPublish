@@ -1,5 +1,5 @@
 ---
-name: omnipublish
+name: OmniPublishv2.0
 description: OmniPublish v2.0 - 全链路多平台发帖工作台。帮助开发、调试、部署 OmniPublish V2.0（FastAPI + Vue 3 + PostgreSQL + Docker）。当用户提到 OmniPublish、发帖流水线、水印处理、平台发布、pipeline 等时激活。
 user-invocable: true
 ---
@@ -20,9 +20,117 @@ user-invocable: true
 ## 项目路径
 
 - **本地代码**：`D:\Users\Public\php20250819\2026www\OmniPublish`
+- **本地访问**：`http://localhost:9527`（Docker 本地运行时）
+- **本地前端开发**：`http://localhost:5173`（`npm run dev` 时）
 - **VPS 部署**：`/opt/omnipublish`（`76.13.218.203`，SSH key `~/.ssh/id_ed25519`）
 - **GitHub**：`https://github.com/XavierMary56/OmniPublish`
-- **访问地址**：`http://76.13.218.203:9527`（或 VPS 配置的域名）
+
+---
+
+## 本地 Docker 操作（Bash 工具直接执行）
+
+### 启动 / 停止
+
+```bash
+# 进入项目目录
+cd D:/Users/Public/php20250819/2026www/OmniPublish
+
+# 启动（首次或代码有变动时重建）
+docker compose up -d --build
+
+# 仅重启（不重建镜像，改了 config.json 时用）
+docker compose restart omnipub
+
+# 停止
+docker compose down
+```
+
+### 查看状态 / 日志
+
+```bash
+# 容器状态
+docker compose ps
+
+# 实时日志（后端）
+docker compose logs -f omnipub
+
+# 只看最近 50 行
+docker compose logs --tail=50 omnipub
+
+# 验证服务是否正常（本地）
+curl http://localhost:9527/api/ping
+```
+
+### 数据库操作
+
+```bash
+# 进入 PostgreSQL 容器
+docker compose exec db psql -U omnipub omnipub
+
+# 备份数据库
+docker compose exec db pg_dump -U omnipub omnipub > backup.sql
+```
+
+### 重置管理员密码
+
+```bash
+docker compose exec omnipub python -c "
+import asyncio, bcrypt
+from database import get_pool
+
+async def reset():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        hashed = bcrypt.hashpw(b'newpassword123', bcrypt.gensalt()).decode()
+        await conn.execute(\"UPDATE users SET password_hash=\$1 WHERE username='admin'\", hashed)
+        print('密码已重置为 newpassword123')
+
+asyncio.run(reset())
+"
+```
+
+---
+
+## 本地 API 访问（WebFetch 工具直接调用）
+
+本地运行时所有 API 基础地址为 `http://localhost:9527`。
+
+### 常用接口
+
+```
+GET  http://localhost:9527/api/ping              健康检查
+POST http://localhost:9527/api/auth/login        登录（body: {username, password}）
+GET  http://localhost:9527/api/tasks             任务看板列表
+GET  http://localhost:9527/api/platforms         业务线列表
+GET  http://localhost:9527/api/stats/overview    统计数据
+GET  http://localhost:9527/docs                  Swagger UI（交互式接口文档）
+```
+
+### 登录获取 Token
+
+```bash
+curl -X POST http://localhost:9527/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+# 返回: {"code":0,"data":{"token":"eyJ...","user":{...}}}
+```
+
+---
+
+## 本地前端开发模式
+
+```bash
+# 后端（另开终端）
+cd D:/Users/Public/php20250819/2026www/OmniPublish/backend
+python main.py
+# → http://localhost:9527
+
+# 前端热重载
+cd D:/Users/Public/php20250819/2026www/OmniPublish/frontend
+npm install
+npm run dev
+# → http://localhost:5173（自动代理 API 到 9527）
+```
 
 ---
 
@@ -181,29 +289,9 @@ task_logs          -- 操作日志
 
 ---
 
-## 部署与运维
+## VPS 运维
 
-### 快速部署
-
-```bash
-# VPS 首次
-git clone https://github.com/XavierMary56/OmniPublish.git /opt/omnipublish
-cd /opt/omnipublish && cp config.json.example config.json
-docker volume create omnipublish_omnipub-pgdata
-docker compose build && docker compose up -d
-
-# 验证
-curl http://127.0.0.1:9527/api/ping
-```
-
-### 自动部署（已配置）
-
-VPS cron 每 5 分钟执行 `/opt/omnipublish/scripts/auto_deploy.sh`：
-- 有新 commit → `git pull` + `docker compose build --no-cache` + `docker compose up -d`
-- 仅文档/config 变更 → 跳过重建，直接 `docker compose up -d`
-- 日志：`/opt/omnipublish/logs/auto_deploy.log`
-
-### SSH 操作 VPS
+### SSH 操作
 
 ```bash
 ssh -i ~/.ssh/id_ed25519 root@76.13.218.203
@@ -220,7 +308,12 @@ docker compose -f /opt/omnipublish/docker-compose.yml restart omnipub
 
 # 手动触发部署
 /opt/omnipublish/scripts/auto_deploy.sh
+
+# 查部署日志
+tail -f /opt/omnipublish/logs/auto_deploy.log
 ```
+
+自动部署：VPS cron 每 5 分钟执行 `/opt/omnipublish/scripts/auto_deploy.sh`，有新 commit 自动重建。
 
 ---
 
@@ -270,6 +363,6 @@ docker compose -f /opt/omnipublish/docker-compose.yml restart omnipub
 
 **调试 WebSocket 不推送** → 检查 `websocket/manager.py` 的 `send_to_task(task_id, ...)` 调用 + 前端 `ws.ts` 的 `on('event_type', handler)` 事件名是否匹配
 
-**水印处理失败** → 检查 `watermark_service.py` 的 `_process_single_platform` + 容器内 `ffmpeg -version` 是否可用 + `/opt/omnipublish/logs/auto_deploy.log` 查错误
+**水印处理失败** → 检查 `watermark_service.py` 的 `_process_single_platform` + 容器内 `ffmpeg -version` 是否可用
 
 **前端步骤数据丢失** → 检查 `pipeline.ts` 的 `saveDraft()` 是否包含该字段 + `loadDraft()` 是否对应恢复 + `loadTask()` 从服务端重新加载是否覆盖了本地数据
