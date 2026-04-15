@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # ── 配置区（按实际 VPS 路径修改）────────────────────────────
-PROJECT_DIR="/opt/OmniPublish"          # VPS 上项目目录
+PROJECT_DIR="/opt/omnipublish"          # VPS 上项目目录
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 LOG_FILE="$PROJECT_DIR/logs/auto_deploy.log"
 LOCK_FILE="/tmp/omnipub_deploy.lock"
