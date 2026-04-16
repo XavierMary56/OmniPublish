@@ -84,22 +84,24 @@ async def list_tasks(
         pt_map: dict[int, list] = {}
 
         if task_ids:
-            # 一次性查询所有任务的步骤状态
+            # 一次性查询所有任务的步骤状态（动态 IN 子句，兼容 SQLite）
+            step_placeholders = ", ".join(f"${i+1}" for i in range(len(task_ids)))
             all_steps = await conn.fetch(
-                "SELECT task_id, step, status FROM task_steps WHERE task_id = ANY($1) ORDER BY step",
-                task_ids,
+                f"SELECT task_id, step, status FROM task_steps WHERE task_id IN ({step_placeholders}) ORDER BY step",
+                *task_ids,
             )
             for s in all_steps:
                 steps_map.setdefault(s["task_id"], []).append({"step": s["step"], "status": s["status"]})
 
-            # 一次性查询所有任务的平台子任务
+            # 一次性查询所有任务的平台子任务（动态 IN 子句，兼容 SQLite）
+            pt_placeholders = ", ".join(f"${i+1}" for i in range(len(task_ids)))
             all_pts = await conn.fetch(
-                """SELECT pt.task_id, pt.platform_id, p.name as platform_name,
+                f"""SELECT pt.task_id, pt.platform_id, p.name as platform_name,
                           pt.wm_status, pt.upload_status, pt.publish_status, pt.publish_error
                    FROM platform_tasks pt
                    JOIN platforms p ON pt.platform_id = p.id
-                   WHERE pt.task_id = ANY($1)""",
-                task_ids,
+                   WHERE pt.task_id IN ({pt_placeholders})""",
+                *task_ids,
             )
             for pt in all_pts:
                 pt_map.setdefault(pt["task_id"], []).append(dict(pt))

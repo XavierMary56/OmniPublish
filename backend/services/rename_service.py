@@ -2,10 +2,12 @@
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
 from services.pipeline_service import pipeline_service
+from config import BACKEND_DIR
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -13,22 +15,28 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from image_rename import rename_files, IMG_EXTS
 
+# Allowed base directories for path traversal protection
+UPLOAD_ROOT = os.path.realpath(os.path.join(str(BACKEND_DIR), "uploads", "tasks"))
+
 
 class RenameService:
     """图片重命名服务。"""
 
+    def _validate_path(self, folder_path: str) -> str:
+        """Validate folder_path is within allowed directories. Returns resolved path."""
+        resolved = os.path.realpath(folder_path)
+        if not resolved.startswith(UPLOAD_ROOT + os.sep) and resolved != UPLOAD_ROOT:
+            raise ValueError(f"路径不在允许的范围内: {folder_path}")
+        if not os.path.isdir(resolved):
+            raise ValueError(f"目录不存在: {folder_path}")
+        return resolved
+
     async def preview(self, folder_path: str, prefix: str, start: int = 1,
                       digits: int = 2, separator: str = "_") -> list:
         """预览重命名结果（dry-run）。"""
-        import os
-        # 路径安全校验
-        real = os.path.realpath(folder_path)
-        if not os.path.isdir(real):
-            raise ValueError(f"目录不存在: {folder_path}")
-        if ".." in folder_path:
-            raise ValueError("路径不允许包含 '..'")
+        resolved = self._validate_path(folder_path)
         files = sorted([
-            f for f in os.listdir(folder_path)
+            f for f in os.listdir(resolved)
             if os.path.splitext(f)[1].lower() in IMG_EXTS
             and not f.startswith(".")
             and "_cover" not in f.lower()
@@ -46,22 +54,17 @@ class RenameService:
     async def execute(self, task_id: int, folder_path: str, prefix: str,
                       start: int = 1, digits: int = 2, separator: str = "_") -> list:
         """执行重命名并更新任务状态。"""
-        import os
-        real = os.path.realpath(folder_path)
-        if not os.path.isdir(real):
-            raise ValueError(f"目录不存在: {folder_path}")
-        if ".." in folder_path:
-            raise ValueError("路径不允许包含 '..'")
+        resolved = self._validate_path(folder_path)
         await pipeline_service.update_step_status(task_id, step=2, status="running")
         await pipeline_service.add_log(task_id, f"开始重命名: 前缀={prefix}", step=2)
 
         try:
-            # 先获取预览（用于记录映射）
-            preview = await self.preview(folder_path, prefix, start, digits, separator)
+            # 先获取预览（用于记录映射）— use resolved path consistently
+            preview = await self.preview(resolved, prefix, start, digits, separator)
 
-            # 在线程池执行重命名
+            # 在线程池执行重命名 — use resolved path
             success = await asyncio.to_thread(
-                rename_files, folder_path, prefix, start, digits, separator, False, False
+                rename_files, resolved, prefix, start, digits, separator, False, False
             )
 
             if success is False:

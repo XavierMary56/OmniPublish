@@ -26,6 +26,15 @@ Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 def _pg_to_sqlite(sql: str) -> str:
     """把 asyncpg 风格的 SQL 转成 SQLite 语法。"""
+    # EXTRACT(EPOCH FROM (x - y)) → (julianday(x) - julianday(y)) * 86400
+    sql = re.sub(
+        r"EXTRACT\s*\(\s*EPOCH\s+FROM\s*\(([^)]+?)\s*-\s*([^)]+?)\)\s*\)",
+        r"(julianday(\1) - julianday(\2)) * 86400",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    # = ANY($N) → IN (?)  -- placeholder; actual expansion in _expand_any()
+    sql = re.sub(r"=\s*ANY\s*\(\s*\$\d+\s*\)", "IN (?)", sql, flags=re.IGNORECASE)
     # $1, $2 → ?
     sql = re.sub(r'\$\d+', '?', sql)
     # col::date → date(col)
@@ -38,6 +47,48 @@ def _pg_to_sqlite(sql: str) -> str:
     sql = re.sub(r"CURRENT_TIMESTAMP\s*-\s*INTERVAL\s+'(\d+)\s+days?'",
                  r"datetime('now', '-\1 days')", sql)
     return sql
+
+
+def _expand_any(sql: str, args: tuple) -> tuple[str, tuple]:
+    """Expand IN (?) placeholders that correspond to list arguments.
+
+    When asyncpg-style ``= ANY($N)`` is used with a list argument,
+    ``_pg_to_sqlite`` converts it to ``IN (?)``.  This helper further
+    expands each ``IN (?)`` whose matching positional arg is a list/tuple
+    into ``IN (?,?,?...)`` and flattens the args accordingly.
+    """
+    # Fast path – no IN (?) at all
+    if "IN (?)" not in sql:
+        return sql, args
+
+    parts: list[str] = []
+    new_args: list[Any] = []
+    arg_idx = 0
+    i = 0
+    while i < len(sql):
+        # Look for the next '?'
+        qpos = sql.find("?", i)
+        if qpos == -1:
+            parts.append(sql[i:])
+            break
+        # Check if this '?' is preceded by 'IN ('
+        prefix_check = sql[:qpos].rstrip()
+        if arg_idx < len(args) and isinstance(args[arg_idx], (list, tuple)):
+            if prefix_check.endswith("IN ("):
+                lst = args[arg_idx]
+                placeholders = ",".join("?" for _ in lst) if lst else "'__EMPTY__'"
+                parts.append(sql[i:qpos])
+                parts.append(placeholders)
+                new_args.extend(lst)
+                arg_idx += 1
+                i = qpos + 1
+                continue
+        parts.append(sql[i:qpos + 1])
+        if arg_idx < len(args):
+            new_args.append(args[arg_idx])
+        arg_idx += 1
+        i = qpos + 1
+    return "".join(parts), tuple(new_args)
 
 
 # ══════════════════════════════════════
@@ -61,26 +112,53 @@ def _make_rows(cursor: aiosqlite.Cursor, raw_rows) -> list[_Row]:
 class _Conn:
     def __init__(self, conn: aiosqlite.Connection):
         self._c = conn
+        self._in_transaction = False
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Async context manager for explicit transactions.
+
+        Usage::
+
+            async with conn.transaction():
+                await conn.execute(...)
+                await conn.execute(...)
+        """
+        await self._c.execute("BEGIN")
+        self._in_transaction = True
+        try:
+            yield self
+            await self._c.execute("COMMIT")
+        except BaseException:
+            await self._c.execute("ROLLBACK")
+            raise
+        finally:
+            self._in_transaction = False
 
     async def execute(self, sql: str, *args) -> str:
         sql = _pg_to_sqlite(sql)
+        sql, args = _expand_any(sql, args)
         await self._c.execute(sql, args)
-        await self._c.commit()
+        if not self._in_transaction:
+            await self._c.commit()
         return f"OK"
 
     async def executemany(self, sql: str, args_list) -> None:
         sql = _pg_to_sqlite(sql)
         await self._c.executemany(sql, args_list)
-        await self._c.commit()
+        if not self._in_transaction:
+            await self._c.commit()
 
     async def fetch(self, sql: str, *args) -> list[_Row]:
         sql = _pg_to_sqlite(sql)
+        sql, args = _expand_any(sql, args)
         async with self._c.execute(sql, args) as cur:
             rows = await cur.fetchall()
             return _make_rows(cur, rows)
 
     async def fetchrow(self, sql: str, *args) -> Optional[_Row]:
         sql = _pg_to_sqlite(sql)
+        sql, args = _expand_any(sql, args)
         async with self._c.execute(sql, args) as cur:
             row = await cur.fetchone()
             if row is None:
@@ -89,6 +167,7 @@ class _Conn:
 
     async def fetchval(self, sql: str, *args) -> Any:
         sql = _pg_to_sqlite(sql)
+        sql, args = _expand_any(sql, args)
         async with self._c.execute(sql, args) as cur:
             row = await cur.fetchone()
             return row[0] if row else None
@@ -157,9 +236,14 @@ async def get_pool() -> _Pool:
 
 
 async def get_db() -> _Conn:
-    """向后兼容旧接口（不推荐直接用，请用 pool.acquire()）。"""
+    """向后兼容旧接口（不推荐直接用，请用 pool.acquire()）。
+
+    NOTE: acquires the pool lock so the caller MUST release quickly.
+    Prefer ``async with pool.acquire() as conn`` instead.
+    """
     pool = await get_pool()
-    # 此处返回原始连接供旧代码使用（不经 context manager）
+    # Properly acquire through the pool lock
+    await pool._lock.acquire()
     raw = await pool._get_conn()
     return _Conn(raw)
 
@@ -375,22 +459,34 @@ async def close_db():
 
 
 async def get_next_task_no() -> str:
-    """生成下一个任务编号 #0001 格式。"""
+    """生成下一个任务编号 #0001 格式。
+
+    NOTE: 仍有微小竞态窗口。调用方（create_task）应捕获
+    IntegrityError 并重试。
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        max_id = await conn.fetchval("SELECT COALESCE(MAX(id), 0) FROM tasks")
-        return f"#{max_id + 1:04d}"
+        max_no = await conn.fetchval(
+            "SELECT COALESCE(MAX(CAST(SUBSTR(task_no, 2) AS INTEGER)), 0) FROM tasks"
+        )
+        return f"#{max_no + 1:04d}"
 
 
 # ══════════════════════════════════════
 # 维护工具
 # ══════════════════════════════════════
 
-async def cleanup_old_logs(conn: _Conn, days: int = 30) -> None:
+async def cleanup_old_logs(conn: _Conn, days: int = 30) -> int:
     """清理超过 N 天的操作日志。"""
-    await conn.execute(
-        f"DELETE FROM task_logs WHERE created_at < datetime('now', '-{days} days')",
+    result = await conn.fetchval(
+        "SELECT COUNT(*) FROM task_logs WHERE created_at < datetime('now', '-' || ? || ' days')",
+        str(days),
     )
+    await conn.execute(
+        "DELETE FROM task_logs WHERE created_at < datetime('now', '-' || ? || ' days')",
+        str(days),
+    )
+    return result or 0
 
 
 async def get_db_stats() -> dict:

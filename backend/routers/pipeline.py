@@ -14,7 +14,7 @@ from models.task import (
     ConfirmWatermarkRequest,
 )
 from models.common import ApiResponse
-from models.user import UserInfo
+from models.user import UserInfo, UserRole
 from middleware.auth import get_current_user
 from database import get_pool, get_next_task_no
 from services.pipeline_service import pipeline_service
@@ -30,6 +30,23 @@ router = APIRouter(prefix="/api/pipeline", tags=["流水线"])
 # 上传文件存储根目录
 UPLOAD_ROOT = os.path.join(BACKEND_DIR, "uploads", "tasks")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
+
+# 上传文件大小限制 50MB
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+
+
+def _check_task_access(task: dict, user: UserInfo):
+    """检查用户是否有权访问该任务。编辑只能访问自己创建的任务。"""
+    if user.role == UserRole.EDITOR and task['created_by'] != user.id:
+        raise HTTPException(status_code=403, detail="无权访问此任务")
+
+
+def _safe_upload_id(upload_id: str) -> str:
+    """校验 upload_id 防止路径穿越攻击。"""
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', upload_id):
+        raise HTTPException(status_code=400, detail="非法的 upload_id")
+    return upload_id
 
 
 def _safe_folder_id(folder_id: str) -> str:
@@ -93,6 +110,10 @@ async def upload_files(
                     break
                 fp.write(chunk)
                 total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    fp.close()
+                    os.remove(dest_path)
+                    raise HTTPException(status_code=413, detail=f"上传总大小超过限制 ({MAX_UPLOAD_SIZE // 1024 // 1024}MB)")
         saved_files.append(safe_name)
 
     # 自动扫描识别
@@ -169,8 +190,12 @@ async def copy_large_files_from_existing(
     not_found = []
 
     for fname in filenames:
+        # 防止路径穿越攻击
+        safe_fname = os.path.basename(fname)
+        if safe_fname != fname or '..' in fname or '/' in fname or '\\' in fname:
+            raise HTTPException(status_code=400, detail=f"非法的文件名: {fname}")
         # 如果目标已有则跳过
-        target_path = os.path.join(target_dir, fname)
+        target_path = os.path.join(target_dir, safe_fname)
         if os.path.exists(target_path):
             copied.append({"name": fname, "status": "exists"})
             continue
@@ -180,7 +205,7 @@ async def copy_large_files_from_existing(
         for other_folder in os.listdir(UPLOAD_ROOT):
             if other_folder == folder_id or other_folder.startswith("."):
                 continue
-            src_path = os.path.join(UPLOAD_ROOT, other_folder, fname)
+            src_path = os.path.join(UPLOAD_ROOT, other_folder, safe_fname)
             if os.path.isfile(src_path):
                 # 硬链接（同磁盘秒级，不占额外空间）
                 try:
@@ -317,6 +342,8 @@ async def init_chunked_upload(
     """初始化分片上传：返回 upload_id 和 folder_id。"""
     if not folder_id:
         folder_id = uuid.uuid4().hex[:12]
+    else:
+        _safe_folder_id(folder_id)
     folder_path = os.path.join(UPLOAD_ROOT, folder_id)
     os.makedirs(folder_path, exist_ok=True)
 
@@ -358,16 +385,20 @@ async def upload_chunk(
     user: UserInfo = Depends(get_current_user),
 ):
     """上传单个分片。"""
+    _safe_upload_id(upload_id)
     chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
     meta_path = os.path.join(chunks_dir, "_meta.json")
     if not os.path.exists(meta_path):
         raise HTTPException(status_code=404, detail=f"上传会话不存在: {upload_id}")
 
-    # 保存分片
+    # 保存分片（流式写入，避免大分片占满内存）
     chunk_path = os.path.join(chunks_dir, f"chunk_{chunk_index:05d}")
-    content = await chunk.read()
     with open(chunk_path, "wb") as fp:
-        fp.write(content)
+        while True:
+            data = await chunk.read(1024 * 1024)  # 1MB 块
+            if not data:
+                break
+            fp.write(data)
 
     # 更新元数据
     with open(meta_path, "r", encoding="utf-8") as fp:
@@ -391,6 +422,7 @@ async def complete_chunked_upload(
     user: UserInfo = Depends(get_current_user),
 ):
     """合并分片，完成上传。"""
+    _safe_upload_id(upload_id)
     chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
     meta_path = os.path.join(chunks_dir, "_meta.json")
     if not os.path.exists(meta_path):
@@ -411,7 +443,7 @@ async def complete_chunked_upload(
         for i in range(meta["total_chunks"]):
             chunk_path = os.path.join(chunks_dir, f"chunk_{i:05d}")
             with open(chunk_path, "rb") as cp:
-                out_fp.write(cp.read())
+                shutil.copyfileobj(cp, out_fp)
 
     # 清理分片目录
     shutil.rmtree(chunks_dir, ignore_errors=True)
@@ -433,6 +465,7 @@ async def get_upload_status(
     user: UserInfo = Depends(get_current_user),
 ):
     """查询分片上传进度（断点续传时恢复已上传的分片列表）。"""
+    _safe_upload_id(upload_id)
     chunks_dir = os.path.join(UPLOAD_ROOT, f".chunks_{upload_id}")
     meta_path = os.path.join(chunks_dir, "_meta.json")
     if not os.path.exists(meta_path):
@@ -458,6 +491,12 @@ async def get_upload_status(
 @router.post("")
 async def create_task(req: CreateTaskRequest, user: UserInfo = Depends(get_current_user)):
     """Step 1 提交：创建发帖任务。"""
+    # 安全检查：只允许访问上传目录或挂载目录
+    allowed_prefixes = [os.path.realpath(UPLOAD_ROOT), "/mnt/", "/app/backend/uploads/"]
+    real_folder = os.path.realpath(req.folder_path)
+    if not any(real_folder.startswith(os.path.realpath(p) if not p.startswith("/") else p) for p in allowed_prefixes):
+        raise HTTPException(status_code=400, detail="不允许访问该路径。请使用上传目录或挂载目录")
+
     if not os.path.isdir(req.folder_path):
         raise HTTPException(status_code=400, detail=f"文件夹不存在: {req.folder_path}")
 
@@ -504,6 +543,7 @@ async def scan_folder(task_id: int, user: UserInfo = Depends(get_current_user)):
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
     return ApiResponse.success(data=_scan_folder(task["folder_path"]))
 
 
@@ -513,8 +553,7 @@ async def get_task(task_id: int, user: UserInfo = Depends(get_current_user)):
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if user.role == "editor" and task["created_by"] != user.id:
-        raise HTTPException(status_code=403, detail="无权查看此任务")
+    _check_task_access(task, user)
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -543,6 +582,7 @@ async def get_dynamic_categories(task_id: int, user: UserInfo = Depends(get_curr
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     platform_ids = task.get("target_platforms", [])
     if not platform_ids:
@@ -577,6 +617,7 @@ async def generate_copy(task_id: int, req: GenerateCopyRequest,
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     # 保存输入参数到任务
     pool = await get_pool()
@@ -597,6 +638,11 @@ async def generate_copy(task_id: int, req: GenerateCopyRequest,
 @router.put("/{task_id}/step/2/confirm")
 async def confirm_copy(task_id: int, req: ConfirmCopyRequest, user: UserInfo = Depends(get_current_user)):
     """确认文案，推进到 Step 3。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
@@ -623,6 +669,7 @@ async def preview_rename(task_id: int, prefix: str = "", start: int = 1,
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     actual_prefix = prefix or task.get("rename_prefix", "image")
     preview = await rename_service.preview(task["folder_path"], actual_prefix, start, 2, separator)
@@ -636,6 +683,7 @@ async def confirm_rename(task_id: int, req: ConfirmRenameRequest,
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     bg.add_task(rename_service.execute, task_id, task["folder_path"],
                 req.prefix, req.start, req.digits, req.separator)
@@ -660,6 +708,7 @@ async def generate_cover(task_id: int, req: GenerateCoverRequest = None,
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     layout = req.layout if req else "triple"
     candidates = req.candidates if req else 3
@@ -676,6 +725,7 @@ async def upload_manual_cover(task_id: int, cover: UploadFile = File(...),
     task = await pipeline_service.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
 
     folder_path = task["folder_path"]
     safe_name = f"manual_cover_{os.path.basename(cover.filename or 'cover.jpg')}"
@@ -693,6 +743,11 @@ async def upload_manual_cover(task_id: int, cover: UploadFile = File(...),
 @router.put("/{task_id}/step/4/confirm")
 async def confirm_cover(task_id: int, req: ConfirmCoverRequest, user: UserInfo = Depends(get_current_user)):
     """确认选中的封面。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     try:
         cover_path = await cover_service.confirm_cover(task_id, req.cover_index)
         return ApiResponse.success(data={"cover_path": cover_path}, message="封面已确认，进入 Step 5 水印处理")
@@ -707,6 +762,11 @@ async def confirm_cover(task_id: int, req: ConfirmCoverRequest, user: UserInfo =
 @router.get("/{task_id}/step/5/plan")
 async def get_watermark_plan(task_id: int, user: UserInfo = Depends(get_current_user)):
     """获取各平台水印方案。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     plan = await watermark_service.get_watermark_plan(task_id)
     return ApiResponse.success(data=plan)
 
@@ -719,6 +779,11 @@ async def confirm_watermark(
     user: UserInfo = Depends(get_current_user),
 ):
     """确认水印方案，开始并行处理。可携带各平台自定义参数覆盖默认配置。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     overrides = [o.dict() for o in body.overrides] if body.overrides else []
     bg.add_task(watermark_service.process_all_platforms, task_id, overrides)
     return ApiResponse.success(message="水印处理已启动，各平台并行处理中")
@@ -727,6 +792,11 @@ async def confirm_watermark(
 @router.get("/{task_id}/step/5/progress")
 async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_current_user)):
     """获取各平台水印处理进度。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -743,6 +813,11 @@ async def get_watermark_progress(task_id: int, user: UserInfo = Depends(get_curr
 @router.put("/{task_id}/step/5/done")
 async def confirm_watermark_done(task_id: int, user: UserInfo = Depends(get_current_user)):
     """确认水印处理结果，推进到 Step 6。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     await pipeline_service.advance_step(task_id, from_step=4, to_step=5)
     await pipeline_service.add_log(task_id, "水印处理已确认，进入上传 & 发布", step=4)
     return ApiResponse.success(message="已进入上传 & 发布")
@@ -755,6 +830,11 @@ async def confirm_watermark_done(task_id: int, user: UserInfo = Depends(get_curr
 @router.get("/{task_id}/step/6/status")
 async def get_publish_status(task_id: int, user: UserInfo = Depends(get_current_user)):
     """获取各平台上传/切片/发布状态。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -772,6 +852,11 @@ async def get_publish_status(task_id: int, user: UserInfo = Depends(get_current_
 async def publish(task_id: int, req: PublishRequest, bg: BackgroundTasks,
                   user: UserInfo = Depends(get_current_user)):
     """发布指定平台（或全部已就绪）。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     bg.add_task(publish_service.publish_platforms, task_id, req.platform_ids or None)
     return ApiResponse.success(message="发布任务已启动")
 
@@ -783,6 +868,11 @@ class RetryPublishRequest(BaseModel):
 async def retry_publish(task_id: int, req: RetryPublishRequest, bg: BackgroundTasks,
                         user: UserInfo = Depends(get_current_user)):
     """重试失败的平台。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     bg.add_task(publish_service.retry_platform, task_id, req.platform_id)
     return ApiResponse.success(message=f"平台 {req.platform_id} 重试已启动")
 
@@ -790,6 +880,11 @@ async def retry_publish(task_id: int, req: RetryPublishRequest, bg: BackgroundTa
 @router.put("/{task_id}/cancel")
 async def cancel_task(task_id: int, user: UserInfo = Depends(get_current_user)):
     """取消任务。"""
+    task = await pipeline_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    _check_task_access(task, user)
+
     await pipeline_service.update_task_status(task_id, "cancelled")
     await pipeline_service.add_log(task_id, "任务已取消")
     return ApiResponse.success(message="任务已取消")

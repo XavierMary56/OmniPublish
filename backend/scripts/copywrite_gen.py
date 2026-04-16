@@ -30,6 +30,19 @@ import argparse, json, os, re, sys, time, urllib.request, urllib.error
 
 
 # ═══════════════════════════════════════════
+# Style parameter validation
+# ═══════════════════════════════════════════
+
+def _validate_style(style: str) -> str:
+    """Sanitize style parameter: only allow alphanumeric, Chinese characters, hyphens, underscores."""
+    if not re.match(r'^[\w\u4e00-\u9fff-]+$', style):
+        print(f"[ERROR] Invalid style parameter: {style}", file=sys.stderr)
+        print("[ERROR] Style must only contain letters, digits, Chinese characters, hyphens, underscores.", file=sys.stderr)
+        sys.exit(1)
+    return style
+
+
+# ═══════════════════════════════════════════
 # Prompt 加载与组装
 # ═══════════════════════════════════════════
 
@@ -354,7 +367,7 @@ def main():
         print(f"[ERROR] 找不到 prompt 模板目录: {prompts_dir}")
         sys.exit(1)
 
-    system_prompt = build_system_prompt(prompts_dir, args.style)
+    system_prompt = build_system_prompt(prompts_dir, _validate_style(args.style))
     user_prompt = build_user_prompt(args)
 
     if not api_key:

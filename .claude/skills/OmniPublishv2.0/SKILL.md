@@ -1,14 +1,37 @@
 ---
-name: OmniPublishv2.0
-description: OmniPublish v2.0 - 全链路多平台发帖工作台（单机版）。帮助部署、运行、调试 OmniPublish V2.0（FastAPI + Vue 3 + SQLite）。当用户提到 OmniPublish、发帖流水线、水印处理、平台发布、pipeline 等时激活。
+name: omnipublish
+version: 2.0.0
+description: "全链路多平台发帖工作台（单机版）。一键部署、启动、运维 OmniPublish V2.0（FastAPI + Vue 3 + SQLite）六步流水线：素材选择→AI文案→图片处理→封面制作→水印→多平台发布。"
+emoji: 🚀
 user-invocable: true
+homepage: https://github.com/XavierMary56/OmniPublish
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python3
+        - node
+        - npm
+      anyBins:
+        - ffmpeg
+    install:
+      - kind: brew
+        package: python@3.11
+      - kind: brew
+        package: node
+      - kind: brew
+        package: ffmpeg
 ---
 
 # OmniPublish V2.0 — 单机版工作台
 
+全链路多平台发帖工作台。6 步流水线自动推进，一次多平台并行分发，SQLite 零配置单机运行。
+
+---
+
 ## 激活时立即执行
 
-当用户调用 /OmniPublishv2.0 时，**立即运行以下状态检查和启动流程**：
+当用户调用 /omnipublish 时，**立即运行以下状态检查和启动流程**：
 
 ```bash
 # 1. 检查服务状态
@@ -31,7 +54,7 @@ start http://127.0.0.1:9527
 
 ## 项目位置
 
-技能目录：`$SKILL_DIR`（`.claude/skills/OmniPublishv2.0/`）  
+技能目录：`$SKILL_DIR`（`.claude/skills/omnipublish/`）  
 项目根目录：`$SKILL_DIR` 上三级（`launcher.py` 自动推导）
 
 launcher.py 做的事：
@@ -104,7 +127,7 @@ curl -X POST http://127.0.0.1:9527/api/auth/login \
 
 ```
 OmniPublish/                         ← 项目根（$SKILL_DIR/../../../）
-├── .claude/skills/OmniPublishv2.0/
+├── .claude/skills/omnipublish/
 │   ├── SKILL.md                     ← 本文件
 │   └── launcher.py                  ← 自适应启动器
 ├── config.json                      ← 运行时配置（首次自动创建）

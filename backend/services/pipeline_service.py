@@ -38,10 +38,21 @@ class PipelineService:
 
     async def advance_step(self, task_id: int, from_step: int, to_step: int):
         """推进步骤：标记当前步骤 done，下一步 pending→对应初始状态。"""
+        # Validate step range and adjacency
+        if not (0 <= from_step < to_step <= 5):
+            raise ValueError(f"Invalid step range: from_step={from_step}, to_step={to_step} (must be 0 <= from < to <= 5)")
+        if to_step != from_step + 1:
+            raise ValueError(f"Steps must be adjacent: from_step={from_step}, to_step={to_step} (to must equal from + 1)")
+
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
                 now = datetime.now()
+
+                # Check task exists
+                task = await conn.fetchrow("SELECT id FROM tasks WHERE id = $1", task_id)
+                if not task:
+                    raise ValueError(f"Task not found: {task_id}")
 
                 # 完成当前步骤
                 await conn.execute(
@@ -49,10 +60,10 @@ class PipelineService:
                     now, task_id, from_step,
                 )
 
-                # 更新下一步状态
+                # 更新下一步状态 — only set started_at if it's currently NULL
                 next_status = self._initial_status_for_step(to_step)
                 await conn.execute(
-                    "UPDATE task_steps SET status = $1, started_at = $2 WHERE task_id = $3 AND step = $4",
+                    "UPDATE task_steps SET status = $1, started_at = CASE WHEN started_at IS NULL THEN $2 ELSE started_at END WHERE task_id = $3 AND step = $4",
                     next_status, now, task_id, to_step,
                 )
 
@@ -77,6 +88,11 @@ class PipelineService:
         """更新某步骤的状态。"""
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Check task exists
+            task = await conn.fetchrow("SELECT id FROM tasks WHERE id = $1", task_id)
+            if not task:
+                raise ValueError(f"Task not found: {task_id}")
+
             now = datetime.now()
             # Build dynamic SET clause with numbered params
             set_parts = ["status = $1"]
@@ -88,8 +104,9 @@ class PipelineService:
                 set_parts.append(f"finished_at = ${param_idx}")
                 params.append(now)
             else:
+                # Only set started_at if it's currently NULL
                 param_idx += 1
-                set_parts.append(f"started_at = ${param_idx}")
+                set_parts.append(f"started_at = CASE WHEN started_at IS NULL THEN ${param_idx} ELSE started_at END")
                 params.append(now)
 
             if error:

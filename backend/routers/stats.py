@@ -1,7 +1,7 @@
 """OmniPublish V2.0 — 数据统计路由"""
 
 import json
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from models.common import ApiResponse
 from models.user import UserInfo, UserRole
 from middleware.auth import get_current_user
@@ -115,7 +115,7 @@ async def editor_stats(
 ):
     """各编辑发帖排名。"""
     if user.role == UserRole.EDITOR:
-        return ApiResponse.error("编辑无权查看排名", code=403)
+        raise HTTPException(status_code=403, detail="编辑无权查看排名")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -151,7 +151,7 @@ async def pipeline_timing(
             f"""SELECT ts.step,
                 AVG(
                     CASE WHEN ts.finished_at IS NOT NULL AND ts.started_at IS NOT NULL
-                    THEN EXTRACT(EPOCH FROM (ts.finished_at - ts.started_at))
+                    THEN (julianday(ts.finished_at) - julianday(ts.started_at)) * 86400
                     ELSE NULL END
                 ) as avg_seconds
                 FROM task_steps ts
@@ -177,6 +177,9 @@ async def pipeline_timing(
 
 def _date_filter(period: str) -> str:
     """生成日期过滤 SQL 片段（SQLite 语法）。"""
+    allowed_periods = {"today", "week", "month"}
+    if period not in allowed_periods:
+        raise HTTPException(status_code=400, detail=f"无效的时间范围: {period}，允许值: {', '.join(sorted(allowed_periods))}")
     if period == "today":
         return "date(created_at) = date('now')"
     elif period == "week":

@@ -8,6 +8,7 @@ Commands: watermark, delogo, crop, blur-pad, trim, add-intro-outro, concat
 import argparse
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -202,10 +203,11 @@ def ensure_outdir(d):
         Path(d).mkdir(parents=True, exist_ok=True)
 
 
-def run_ffmpeg(args, show_progress=False):
+def run_ffmpeg(args, show_progress=False, timeout=600):
     """Run ffmpeg with list args, stream output line by line to stdout.
 
     show_progress=True 时解析 ffmpeg 进度行输出百分比。
+    timeout: max seconds for the process (default 600).
     """
     proc = subprocess.Popen(
         args,
@@ -214,17 +216,22 @@ def run_ffmpeg(args, show_progress=False):
         text=True,
     )
     import re as _re
-    for line in proc.stdout:
-        if show_progress:
-            # 解析 ffmpeg 进度: time=00:01:23.45
-            m = _re.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
-            if m:
-                h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
-                elapsed = h * 3600 + mi * 60 + s
-                print(f"\r[PROGRESS] {elapsed:.1f}s processed", end="", flush=True)
-                continue
-        print(line, end="", flush=True)
-    proc.wait()
+    try:
+        for line in proc.stdout:
+            if show_progress:
+                # 解析 ffmpeg 进度: time=00:01:23.45
+                m = _re.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
+                if m:
+                    h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+                    elapsed = h * 3600 + mi * 60 + s
+                    print(f"\r[PROGRESS] {elapsed:.1f}s processed", end="", flush=True)
+                    continue
+            print(line, end="", flush=True)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise subprocess.TimeoutExpired(args[0], timeout)
     if show_progress:
         print()  # 换行
     if proc.returncode != 0:
@@ -232,8 +239,11 @@ def run_ffmpeg(args, show_progress=False):
 
 
 def ffmpeg_safe_path(path):
-    """Convert path to string with forward slashes (for Windows concat list compatibility)."""
-    return str(path).replace("\\", "/")
+    """Convert path to string with forward slashes and escape single quotes for concat list."""
+    s = str(path).replace("\\", "/")
+    # Escape single quotes for ffmpeg concat file format
+    s = s.replace("'", "'\\''")
+    return s
 
 
 def compress_to_size(filepath, target_mb, codec):
@@ -523,6 +533,14 @@ def cmd_crop(args):
     ok(f"Crop complete: {count} videos")
 
 
+def _validate_filter_param(value: str, name: str) -> str:
+    """Validate ffmpeg filter parameters to prevent injection."""
+    # Only allow digits, slashes, colons, dots, minus signs (for numeric expressions)
+    if not re.match(r'^[\d/:.\-]+$', value):
+        die(f"Invalid {name} parameter: {value} (only digits, /, :, ., - allowed)")
+    return value
+
+
 # ═══ BLUR-PAD ═══
 def cmd_blur_pad(args):
     output = args.output or str(Path(args.input) / "\u5df2\u5904\u7406")
@@ -544,8 +562,8 @@ def cmd_blur_pad(args):
 
         info(f"Blur-pad ({o} \u2192 {tw}x{th}): {name}")
 
-        bg_scale = args.bg_scale
-        strength = args.strength
+        bg_scale = _validate_filter_param(args.bg_scale, "bg_scale")
+        strength = _validate_filter_param(args.strength, "strength")
 
         run_ffmpeg([
             "ffmpeg", "-y", "-i", str(f),

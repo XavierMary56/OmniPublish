@@ -12,6 +12,9 @@ import argparse, os, sys
 from PIL import Image
 import numpy as np
 
+# Pillow decompression bomb protection: limit to 50 megapixels
+Image.MAX_IMAGE_PIXELS = 50_000_000
+
 # 使用公共人脸检测模块
 from face_detect import detect_faces, rects_overlap
 

@@ -2,8 +2,15 @@
 
 import json
 import asyncio
+import logging
 from typing import Dict, Set
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
+
+# Connection limits
+MAX_TOTAL_CONNECTIONS = 100
+MAX_CONNECTIONS_PER_TASK = 10
 
 
 class ConnectionManager:
@@ -16,20 +23,44 @@ class ConnectionManager:
         self._notification_connections: Set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
+    @property
+    def total_connections(self) -> int:
+        """Total number of active connections (task + notification)."""
+        count = sum(len(s) for s in self._task_connections.values())
+        count += len(self._notification_connections)
+        return count
+
     async def connect_task(self, task_id: int, ws: WebSocket):
         """连接到特定任务的进度频道。"""
-        await ws.accept()
         key = str(task_id)
         async with self._lock:
+            # Check total connection limit
+            if self.total_connections >= MAX_TOTAL_CONNECTIONS:
+                await ws.close(code=1013, reason="Server at max connections")
+                logger.warning(f"WebSocket rejected: total connections at limit ({MAX_TOTAL_CONNECTIONS})")
+                return
+            # Check per-task connection limit
+            task_conns = self._task_connections.get(key, set())
+            if len(task_conns) >= MAX_CONNECTIONS_PER_TASK:
+                await ws.close(code=1013, reason=f"Task {task_id} at max connections")
+                logger.warning(f"WebSocket rejected: task {task_id} at limit ({MAX_CONNECTIONS_PER_TASK})")
+                return
+            await ws.accept()
             if key not in self._task_connections:
                 self._task_connections[key] = set()
             self._task_connections[key].add(ws)
+            logger.info(f"WebSocket connected: task={task_id}, task_conns={len(self._task_connections[key])}, total={self.total_connections}")
 
     async def connect_notifications(self, ws: WebSocket):
         """连接到全局通知频道。"""
-        await ws.accept()
         async with self._lock:
+            if self.total_connections >= MAX_TOTAL_CONNECTIONS:
+                await ws.close(code=1013, reason="Server at max connections")
+                logger.warning(f"WebSocket notification rejected: total at limit ({MAX_TOTAL_CONNECTIONS})")
+                return
+            await ws.accept()
             self._notification_connections.add(ws)
+            logger.info(f"WebSocket notification connected, total={self.total_connections}")
 
     async def disconnect_task(self, task_id: int, ws: WebSocket):
         """断开任务频道连接。"""
