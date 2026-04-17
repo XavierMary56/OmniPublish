@@ -295,10 +295,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (draft.coverCandidates?.length) coverCandidates.value = draft.coverCandidates
       if (draft.selectedCover !== undefined) selectedCover.value = draft.selectedCover
 
-      // 验证服务端任务是否还存在
+      // 验证服务端任务是否还存在，并同步 step.data 中的最新结果（如 AI 文案生成结果）
+      // syncStep=false 保留草稿恢复的 currentStep，不被服务端覆盖
       if (draft.taskId) {
         try {
-          await api('GET', `/pipeline/${draft.taskId}`)
+          await loadTask(draft.taskId, false)
         } catch {
           // 任务不存在（404），清除 taskId 相关状态
           taskId.value = null
@@ -458,6 +459,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
             }
             if (stepData && typeof stepData === 'object' && stepData.title) {
               copyResult.value = { title: stepData.title, keywords: stepData.keywords || '', body: stepData.body || '' }
+              saveDraft()  // 持久化文案结果，避免刷新丢失
             }
           }
           // 重新加载完整任务数据
@@ -538,7 +540,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
     ws.on('step_changed', (data) => {
       // 步骤切换完全由用户确认按钮控制，WebSocket 只刷新数据不改 currentStep
       if (data.step === 1) isGenerating.value = false
-      if (taskId.value) loadTask(taskId.value, false)
+      if (taskId.value) {
+        loadTask(taskId.value, false).then(() => saveDraft())
+      }
     })
     ws.on('platform_update', (data) => {
       if (data.wm_status) {
